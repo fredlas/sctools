@@ -97,7 +97,7 @@ void Metrics::output_metrics(ofstream& fmetric_out)
 
 unsigned int offset = 3;
 void Metrics::parse_line(std::string& str, ofstream& fmetric_out,
-                         std::set<std::string>& mitochondrial_genes,
+                         std::unordered_set<std::string>& mitochondrial_genes,
                          MetricType metric_type)
 {
   char line[1000];
@@ -214,7 +214,7 @@ void Metrics::parse_line(std::string& str, ofstream& fmetric_out,
 //  ``finalize()`` replaces attributes in-place that were initialized by the constructor as
 //  ``None`` with a value calculated across all molecule data that has been aggregated.
 
-void Metrics::finalize(std::set<std::string>& mitochondrial_genes)
+void Metrics::finalize(std::unordered_set<std::string>& mitochondrial_genes)
 {
   molecule_barcode_fraction_bases_above_30_mean =
       _molecule_barcode_fraction_bases_above_30.getMean();
@@ -327,8 +327,7 @@ void CellMetrics::output_metrics_extra(ofstream& fmetric_out)
               << std::endl;
 }
 
-// TODO i wonder if it could be unordered_set
-void CellMetrics::finalize(std::set<std::string>& mitochondrial_genes)
+void CellMetrics::finalize(std::unordered_set<std::string>& mitochondrial_genes)
 {
   // call the finalize function in the parent class
   Metrics::finalize(mitochondrial_genes);
@@ -418,7 +417,7 @@ void GeneMetrics::output_metrics_extra(ofstream& fmetric_out)
               << std::endl;
 }
 
-void GeneMetrics::finalize(std::set<std::string>& mitochondrial_genes)
+void GeneMetrics::finalize(std::unordered_set<std::string>& mitochondrial_genes)
 {
   // call the finalize function in the parent class
   Metrics::finalize(mitochondrial_genes);

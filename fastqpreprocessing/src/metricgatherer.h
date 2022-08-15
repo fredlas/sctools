@@ -13,12 +13,13 @@
 #include <regex>
 #include <iostream>
 #include <vector>
-#include <assert.h>
+#include <cassert>
 #include <fstream>
 #include <iomanip>
-#include <math.h>
+#include <cmath>
+#include <unordered_set>
 
-using namespace std;
+enum class MetricType { Cell, Gene };
 
 /*
     Methods
@@ -81,6 +82,7 @@ private:
   int n_reads = 0;
   const int noise_reads = 0; //# long polymers, N-sequences; NotImplemented
 
+  // TODO does it need to be sorted?
   //std::unordered_map<std::string, int> _fragment_histogram;
   std::map<std::string, int> _fragment_histogram;
 
@@ -170,7 +172,7 @@ public:
   virtual std::string getHeader() = 0;
 
   void parse_line(std::string& str, ofstream& fmetric_out,
-                  std::set<std::string>& mitochondrial_genes,
+                  std::unordered_set<std::string>& mitochondrial_genes,
                   MetricType metric_type);
 
   void output_metrics(ofstream& fmetric_out);
@@ -179,7 +181,7 @@ public:
                                   const std::string& second_tag,
                                   const std::string& third_tag,
                                   char** record) = 0;
-  virtual void finalize(std::set<std::string>& mitochondrial_genes);
+  virtual void finalize(std::unordered_set<std::string>& mitochondrial_genes);
   virtual void clear();
 };
 
@@ -236,7 +238,7 @@ public:
                           const std::string& third_tag,
                           char** record) override;
 
-  void finalize(std::set<std::string>& mitochondrial_genes);
+  void finalize(std::unordered_set<std::string>& mitochondrial_genes);
 
   void clear();
 };
@@ -270,7 +272,7 @@ public:
                           const std::string& third_tag,
                           char** record) override;
 
-  void finalize(std::set<std::string>& mitochondrial_genes);
+  void finalize(std::unordered_set<std::string>& mitochondrial_genes);
   void clear();
 };
 

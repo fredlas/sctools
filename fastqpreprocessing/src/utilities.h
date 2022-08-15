@@ -18,10 +18,6 @@
 #include <algorithm>
 #include <experimental/filesystem>
 
-
-enum class MetricType { Cell, Gene };
-
-
 // structure for correcting the barcodes
 struct WhiteListData
 {
