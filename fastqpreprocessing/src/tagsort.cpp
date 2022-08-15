@@ -7,16 +7,19 @@
 
 #include "htslib_tagsort.h"
 #include <algorithm>
+#include <cassert>
 #include <cctype>
 #include <chrono>
 #include <fstream>
+#include <priority_queue>
 #include <regex>
 #include <string>
+
+constexpr int kDataBufferSize = 1000;
 
 struct Context
 {
   std::vector<std::vector<std::string>> data;
-  std::vector<std::ifstream*> file_handles;
 
   std::vector<long int> file_offset;
   std::vector<int> data_size;
@@ -24,41 +27,35 @@ struct Context
   std::vector<bool> isempty;
   int i = -1;
   int num_active_files = 0;
-  int BUF_SIZE;
-  int NUM_PARTS;
+  const unsigned int num_parts_;
 
-  Context(unsigned int num_parts, int data_buffer_size)
-    : NUM_PARTS(num_parts), BUF_SIZE(data_buffer_size)
+  Context(unsigned int num_parts) : num_parts_(num_parts)
   {
-    // set file file handles to 0
-    for (auto i=0; i < this->NUM_PARTS; i++)
-      this->file_handles.push_back(0);
-
     // set the file offsets to 0
-    for (auto i=0; i < this->NUM_PARTS; i++)
+    for (auto i=0; i < this->num_parts_; i++)
       this->file_offset.push_back(0);
 
     // set the isempty for each file to false
-    for (auto i=0; i < this->NUM_PARTS; i++)
+    for (auto i=0; i < this->num_parts_; i++)
       this->isempty.push_back(false);
 
     // set a vector of vectors of data for each file
-    for (auto i=0; i < this->NUM_PARTS; i++)
+    for (auto i=0; i < this->num_parts_; i++)
       this->data.push_back(std::vector<std::string>());
 
     // set the data_size of the buffer for each file to 0
-    for (auto i=0; i < this->NUM_PARTS; i++)
+    for (auto i=0; i < this->num_parts_; i++)
       this->data_size.push_back(0);
 
-    // set the pointer to f each buffer to thist.BUF_SIZE
-    for (auto i=0; i < this->NUM_PARTS; i++)
-      this->ptrs.push_back(this->BUF_SIZE);
+    // set the pointer to f each buffer to kDataBufferSize
+    for (auto i=0; i < this->num_parts_; i++)
+      this->ptrs.push_back(kDataBufferSize);
   }
 
   void print_status()
   {
     std::cout << "Contx status " << std::endl;
-    for (auto i=0; i < this->NUM_PARTS; i++)
+    for (auto i=0; i < this->num_parts_; i++)
     {
       this->i = i;
       std::cout << "\t" << this->i << "\t" << this->data[this->i].size() << "\t"
@@ -68,7 +65,6 @@ struct Context
 
   void clear()
   {
-    file_handles.clear();
     data_size.clear();
     ptrs.clear();
     isempty.clear();
@@ -77,7 +73,7 @@ struct Context
 
 using QUEUETUPLE = std::tuple<std::string, int, int>;
 
-extern std::vector<string> partial_files;
+extern std::vector<std::string> partial_files;
 int filling_counter = 0;
 
 inline std::string ltrim(std::string& s)
@@ -87,7 +83,7 @@ inline std::string ltrim(std::string& s)
   return s;
 }
 
-inline std::string rtrim(string& s)
+inline std::string rtrim(std::string& s)
 {
   auto it = find_if_not(s.rbegin(), s.rend(), [](int c) { return isspace(c); }).base();
   s.erase(it, s.end());
@@ -198,31 +194,22 @@ void fill_buffer(Context& contx)
   contx.data[contx.i].clear();
   int k = 0;
 
-  // TODO
-  ifstream* input_file = new ifstream;
-
-  input_file->open(partial_files[contx.i].c_str(), std::ifstream::in);
-  if (!input_file->is_open())
-  {
-    std::cerr << "ERROR failed to open the file " << partial_files[contx.i] << std::endl;
-    exit(1);
-  }
+  std::ifstream input_file(partial_files[contx.i]);
+  if (!input_file)
+    crash("ERROR failed to open the file " + partial_files[contx.i]);
 
   input_file->seekg(contx.file_offset[contx.i]);
-  contx.file_handles[contx.i] = input_file;
 
   // the order of the loop condition is iportant first make sure if you can accomodate then try to read,
   // otherwise it might create a read but never processed
-  for (std::string line; k < contx.BUF_SIZE &&  std::getline(*(contx.file_handles[contx.i]), line); k++)
+  for (std::string line; k < kDataBufferSize && std::getline(input_file, line); k++)
   {
     contx.data[contx.i].push_back(line);
     filling_counter += 1;
   }
-  assert(contx.data[contx.i].size() <= contx.BUF_SIZE);
+  assert(contx.data[contx.i].size() <= kDataBufferSize);
 
-  contx.file_offset[contx.i] = input_file->tellg();
-  input_file->close();
-  delete input_file;
+  contx.file_offset[contx.i] = input_file.tellg();
 
   contx.data_size[contx.i] = contx.data[contx.i].size();
 
@@ -233,13 +220,13 @@ void fill_buffer(Context& contx)
   }
   else
   {
-    contx.ptrs[contx.i] = contx.BUF_SIZE;
+    contx.ptrs[contx.i] = kDataBufferSize;
     contx.isempty[contx.i] = true;
   }
 
 #ifdef DEBUG
   std::cout << "-->" << std::endl;
-  for (int m = 0; m < contx.NUM_PARTS; m++)
+  for (int m = 0; m < contx.num_parts_; m++)
     std::cout << "\t" << m << " : " << contx.data_size[m] << " : " << contx.ptrs[m] << std::endl;
 #endif
 
@@ -256,14 +243,14 @@ void mergeSortedPartialFiles(const InputOptionsTagsort& options)
     mitochondrial_genes = get_mitochondrial_gene_names(options.gtf_file);
 
   // input the buffer size and partial files
-  Context contx(partial_files.size(), DATA_BUFFER_SIZE);
+  Context contx(partial_files.size());
   auto cmp = [](const QUEUETUPLE &a, const  QUEUETUPLE &b)
   {
-    return get<0>(a) > get<0>(b);
+    return std::get<0>(a) > std::get<0>(b);
   };
   std::priority_queue<QUEUETUPLE, std::vector<QUEUETUPLE>,  decltype(cmp) > heap(cmp);
 
-  for (auto i=0; i < contx.NUM_PARTS; i++)
+  for (auto i=0; i < contx.num_parts_; i++)
   {
     contx.i = i;
     fill_buffer(contx);
@@ -274,10 +261,10 @@ void mergeSortedPartialFiles(const InputOptionsTagsort& options)
 
   // create the heap from the first batch loaded data
   contx.num_active_files = 0;
-  for (auto i=0; i< contx.NUM_PARTS; i++)
+  for (auto i=0; i< contx.num_parts_; i++)
   {
     contx.i = i;
-    if (contx.ptrs[i] != contx.BUF_SIZE)
+    if (contx.ptrs[i] != kDataBufferSize)
     {
       std::sregex_token_iterator iter(contx.data[i][contx.ptrs[i]].begin(),
                                       contx.data[i][contx.ptrs[i]].end(), rgx, -1);
@@ -350,7 +337,7 @@ void mergeSortedPartialFiles(const InputOptionsTagsort& options)
     heap.pop();
 
     // start writing in chunks from the stream buffer
-    if (num_alignments%contx.BUF_SIZE==0)
+    if (num_alignments%kDataBufferSize==0)
     {
       if (options.output_sorted_info)
       {

@@ -18,8 +18,6 @@
 #define NUM_THREADS 10
 #define MAX_THREADS 30
 
-#define DATA_BUFFER_SIZE 1000
-
 extern sem_t semaphore;
 extern std::mutex mtx;
 extern std::vector<std::string> partial_files;
