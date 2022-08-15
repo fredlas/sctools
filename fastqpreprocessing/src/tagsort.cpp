@@ -5,7 +5,6 @@
  *  @date   2021-08-11
  ***********************************************/
 
-#include "htslib_tagsort.h"
 #include <algorithm>
 #include <cassert>
 #include <cctype>
@@ -14,6 +13,9 @@
 #include <queue>
 #include <regex>
 #include <string>
+
+#include "htslib_tagsort.h"
+#include "metricgatherer.h"
 
 constexpr int kDataBufferSize = 1000;
 
@@ -27,35 +29,35 @@ struct Context
   std::vector<bool> isempty;
   int i = -1;
   int num_active_files = 0;
-  const unsigned int num_parts_;
+  const int num_parts_;
 
   Context(unsigned int num_parts) : num_parts_(num_parts)
   {
     // set the file offsets to 0
-    for (auto i=0; i < this->num_parts_; i++)
+    for (int i=0; i < this->num_parts_; i++)
       this->file_offset.push_back(0);
 
     // set the isempty for each file to false
-    for (auto i=0; i < this->num_parts_; i++)
+    for (int i=0; i < this->num_parts_; i++)
       this->isempty.push_back(false);
 
     // set a vector of vectors of data for each file
-    for (auto i=0; i < this->num_parts_; i++)
+    for (int i=0; i < this->num_parts_; i++)
       this->data.push_back(std::vector<std::string>());
 
     // set the data_size of the buffer for each file to 0
-    for (auto i=0; i < this->num_parts_; i++)
+    for (int i=0; i < this->num_parts_; i++)
       this->data_size.push_back(0);
 
     // set the pointer to f each buffer to kDataBufferSize
-    for (auto i=0; i < this->num_parts_; i++)
+    for (int i=0; i < this->num_parts_; i++)
       this->ptrs.push_back(kDataBufferSize);
   }
 
   void print_status()
   {
     std::cout << "Contx status " << std::endl;
-    for (auto i=0; i < this->num_parts_; i++)
+    for (int i=0; i < this->num_parts_; i++)
     {
       this->i = i;
       std::cout << "\t" << this->i << "\t" << this->data[this->i].size() << "\t"
@@ -198,7 +200,7 @@ void fill_buffer(Context& contx)
   if (!input_file)
     crash("ERROR failed to open the file " + partial_files[contx.i]);
 
-  input_file->seekg(contx.file_offset[contx.i]);
+  input_file.seekg(contx.file_offset[contx.i]);
 
   // the order of the loop condition is iportant first make sure if you can accomodate then try to read,
   // otherwise it might create a read but never processed
@@ -250,7 +252,7 @@ void mergeSortedPartialFiles(const InputOptionsTagsort& options)
   };
   std::priority_queue<QUEUETUPLE, std::vector<QUEUETUPLE>,  decltype(cmp) > heap(cmp);
 
-  for (auto i=0; i < contx.num_parts_; i++)
+  for (int i=0; i < contx.num_parts_; i++)
   {
     contx.i = i;
     fill_buffer(contx);
@@ -261,7 +263,7 @@ void mergeSortedPartialFiles(const InputOptionsTagsort& options)
 
   // create the heap from the first batch loaded data
   contx.num_active_files = 0;
-  for (auto i=0; i< contx.num_parts_; i++)
+  for (int i=0; i< contx.num_parts_; i++)
   {
     contx.i = i;
     if (contx.ptrs[i] != kDataBufferSize)
@@ -282,9 +284,9 @@ void mergeSortedPartialFiles(const InputOptionsTagsort& options)
   }
 
   //  now merge by pop an push
-  ofstream fout;
+  std::ofstream fout;
   if (options.compute_metric) // TODO i think this is a mistake, and should actually be options.output_sorted_info
-    fout.open(sorted_output_file.c_str());
+    fout.open(sorted_output_file);
 
   // pop and push from the heap
   int num_alignments = 0;
