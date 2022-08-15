@@ -1,8 +1,8 @@
 #ifndef __FASTQ_SLIDESEQ_H__
 #define __FASTQ_SLIDESEQ_H__
 /**
- *  @file   fastqprocess.h
- *  @brief  functions for file processing
+ *  @file   fastq_slideseq.h
+ *  @brief  re-arranging reads based on the read structure.
  *  @author Kishori Konwar
  *  @date   2020-08-27
  ***********************************************/
@@ -54,7 +54,6 @@ typedef struct SamRecordBins
 
   /// sample name
   std::string sample_id;
-  int32_t block_size;
 
   /// number of output bam files, and one writer thread per bam file
   int16_t num_files;
@@ -81,7 +80,7 @@ typedef struct SamRecordBins
  *         map and vector of correct barcodes
 */
 void process_inputs(const INPUT_OPTIONS_FASTQ_READ_STRUCTURE& options,
-                    const WHITE_LIST_DATA* white_list_data);
+                    const WhiteListData* white_list_data);
 
 /**
  * @brief Process one triplet of file R1/R2 and I1 in a thread
@@ -103,7 +102,7 @@ void process_inputs(const INPUT_OPTIONS_FASTQ_READ_STRUCTURE& options,
 
 void process_file(int32_t tindex, std::string filename, String filename1,
                   String filename2,  String read_structure,
-                  const WHITE_LIST_DATA* white_list_data,
+                  const WhiteListData* white_list_data,
                   SAM_RECORD_BINS* samrecord_bins);
 
 /**

@@ -28,13 +28,13 @@ char*  error_sem_post = "sem_post: semaphore";
 #define SEM_WAIT(X)                                      \
  ({                                                      \
      if (sem_wait(&X) == -1)                             \
-         error(error_sem_wait);                          \
+         crashWithPerror(error_sem_wait);                          \
  })
 
 #define SEM_POST(X)                                      \
  ({                                                      \
      if (sem_post(&X) == -1)                             \
-        error(error_sem_wait);                           \
+        crashWithPerror(error_sem_wait);                           \
  })
 
 
@@ -88,7 +88,7 @@ inline char* get_Ztag_or_default(bam1_t* aln, const char* tagname, char* default
 
 using namespace std;
 
-void process_alignments(INPUT_OPTIONS_TAGSORT& options, bam1_t** aln, bam_hdr_t* bamHdr, unsigned int buf_no, unsigned int n)
+void process_alignments(InputOptionsTagsort& options, bam1_t** aln, bam_hdr_t* bamHdr, unsigned int buf_no, unsigned int n)
 {
   int threshold = THRESHOLD; //qual score threshold
   vector<TAGTUPLE>  tuple_records;
@@ -286,21 +286,12 @@ void process_alignments(INPUT_OPTIONS_TAGSORT& options, bam1_t** aln, bam_hdr_t*
   write_out_partial_txt_file(tuple_records, options.temp_folder);
 
   // delete the triplet
-  for (auto it=tuple_records.begin(); it!=tuple_records.end(); it++)
-  {
+  for (auto it=tuple_records.begin(); it != tuple_records.end(); it++)
     delete get<0>(*it);
-  }
-  tuple_records.clear();
-  freeStlContainer(tuple_records);
 
   //  free the memory for the strings
-  for (auto it=string_map.begin(); it!=string_map.end(); it++)
-  {
+  for (auto it=string_map.begin(); it != string_map.end(); it++)
     delete it->second;
-  }
-
-  string_map.clear();
-  freeStlContainer(string_map);
 
   mtx.lock();
   threads_to_join.insert(buf_no);
@@ -318,10 +309,10 @@ void process_alignments(INPUT_OPTIONS_TAGSORT& options, bam1_t** aln, bam_hdr_t*
  * The input bam file is read chunk by chunk, sorted by the tags and the written
  * out as a text file in the sorted manner.
  *
- * @param options: INPUT_OPTIONS_TAGSORT the inputs to the program
+ * @param options: InputOptionsTagsort the inputs to the program
  * @return a vector containing the file paths of the partial files
 */
-void create_sorted_file_splits_htslib(INPUT_OPTIONS_TAGSORT& options)
+void create_sorted_file_splits_htslib(InputOptionsTagsort& options)
 {
 
   string input_bam = options.bam_input;

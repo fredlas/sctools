@@ -6,11 +6,75 @@
  ***********************************************/
 
 #include "htslib_tagsort.h"
-#include "tagsort.h"
-#include <chrono>
 #include <algorithm>
 #include <cctype>
+#include <chrono>
+#include <fstream>
+#include <regex>
 
+struct Context
+{
+  vector<vector<std::string>> data;
+  vector<ifstream*> file_handles;
+
+  vector<long int> file_offset;
+  vector<int> data_size;
+  vector<int> ptrs;
+  vector<bool> isempty;
+  int i = -1;
+  int num_active_files = 0;
+  int BUF_SIZE;
+  int NUM_PARTS;
+
+  Context(unsigned int num_parts, int data_buffer_size)
+    : NUM_PARTS(num_parts), BUF_SIZE(data_buffer_size)
+  {
+    // set file file handles to 0
+    for (auto i=0; i < this->NUM_PARTS; i++)
+      this->file_handles.push_back(0);
+
+    // set the file offsets to 0
+    for (auto i=0; i < this->NUM_PARTS; i++)
+      this->file_offset.push_back(0);
+
+    // set the isempty for each file to false
+    for (auto i=0; i < this->NUM_PARTS; i++)
+      this->isempty.push_back(false);
+
+    // set a vector of vectors of data for each file
+    for (auto i=0; i < this->NUM_PARTS; i++)
+      this->data.push_back(std::vector<std::string>());
+
+    // set the data_size of the buffer for each file to 0
+    for (auto i=0; i < this->NUM_PARTS; i++)
+      this->data_size.push_back(0);
+
+    // set the pointer to f each buffer to thist.BUF_SIZE
+    for (auto i=0; i < this->NUM_PARTS; i++)
+      this->ptrs.push_back(this->BUF_SIZE);
+  }
+
+  void print_status()
+  {
+    std::cout << "Contx status " << std::endl;
+    for (auto i=0; i < this->NUM_PARTS; i++)
+    {
+      this->i = i;
+      std::cout << "\t" << this->i << "\t" << this->data[this->i].size() << "\t"
+                << this->data_size[this->i] << "\t"  << this->ptrs[this->i] << std::endl;
+    }
+  }
+
+  void clear()
+  {
+    file_handles.clear();
+    data_size.clear();
+    ptrs.clear();
+    isempty.clear();
+  }
+};
+
+using QUEUETUPLE = std::tuple<std::string, int, int>;
 
 extern std::vector<string> partial_files;
 int filling_counter = 0;
@@ -51,13 +115,7 @@ unsigned int split_buffer_to_fields(const std::string& str, char* line, char** f
 }
 
 
-/*
- * @brief retuns the set of mitochondrial gene names
- *
- * @param gtf file name, unzipped
- * @return std::set<std::sting>
-*/
-std::set<std::string> get_mitochondrial_gene_names(const std::string& gtf_file)
+std::set<std::string> get_mitochondrial_gene_names(const std::string& gtf_filename)
 {
   char field_buffer[1000];
   char* fields[20];
@@ -69,16 +127,11 @@ std::set<std::string> get_mitochondrial_gene_names(const std::string& gtf_file)
   char* keyvals[20];
 
   std::set<std::string> mitochondrial_gene_ids;
-  ifstream* input_fp = new ifstream;
+  ifstream input_file(gtf_filename, std::ifstream::in);
+  if (!input_file)
+    crash("ERROR failed to open the GTF file " + gtf_filename);
 
-  input_fp->open(gtf_file.c_str(), std::ifstream::in);
-  if (!input_fp->is_open())
-  {
-    std::cerr << "ERROR failed to open the GTF file " << gtf_file<< std::endl;
-    exit(1);
-  }
-
-  for (std::string line; std::getline(*(input_fp), line);)
+  for (std::string line; std::getline(input_file, line);)
   {
     // skip comment lines
     if (std::regex_search(line, std::regex("^#")))
@@ -144,17 +197,18 @@ void fill_buffer(Context& contx)
   contx.data[contx.i].clear();
   int k = 0;
 
-  ifstream* input_fp = new ifstream;
+  // TODO
+  ifstream* input_file = new ifstream;
 
-  input_fp->open(partial_files[contx.i].c_str(), std::ifstream::in);
-  if (!input_fp->is_open())
+  input_file->open(partial_files[contx.i].c_str(), std::ifstream::in);
+  if (!input_file->is_open())
   {
     std::cerr << "ERROR failed to open the file " << partial_files[contx.i] << std::endl;
     exit(1);
   }
 
-  input_fp->seekg(contx.file_offset[contx.i]);
-  contx.file_handles[contx.i] = input_fp;
+  input_file->seekg(contx.file_offset[contx.i]);
+  contx.file_handles[contx.i] = input_file;
 
   // the order of the loop condition is iportant first make sure if you can accomodate then try to read,
   // otherwise it might create a read but never processed
@@ -165,9 +219,9 @@ void fill_buffer(Context& contx)
   }
   assert(contx.data[contx.i].size() <= contx.BUF_SIZE);
 
-  contx.file_offset[contx.i] = input_fp->tellg();
-  input_fp->close();
-  delete input_fp;
+  contx.file_offset[contx.i] = input_file->tellg();
+  input_file->close();
+  delete input_file;
 
   contx.data_size[contx.i] = contx.data[contx.i].size();
 
@@ -190,21 +244,14 @@ void fill_buffer(Context& contx)
 
 }
 
-/*
- * @brief Merges the files that are already sorted
- *
- * @param INPUT_OPTIONS_TAGSORT
-*/
-bool process_partial_files(const INPUT_OPTIONS_TAGSORT& options)
+void mergeSortedPartialFiles(const InputOptionsTagsort& options)
 {
   const std::string& sorted_output_file = options.sorted_output_file;
-  bool compute_metric = (options.compute_metric == 1);
-  bool output_sorted_info = (options.output_sorted_info == 1);
   const std::string& metric_type  = options.metric_type;
   const std::string& metric_output_file = options.metric_output_file;
 
   std::set<std::string> mitochondrial_genes;
-  if (options.gtf_file.size() > 0)
+  if (!options.gtf_file.empty())
     mitochondrial_genes = get_mitochondrial_gene_names(options.gtf_file);
 
   // input the buffer size and partial files
@@ -248,7 +295,7 @@ bool process_partial_files(const INPUT_OPTIONS_TAGSORT& options)
 
   //  now merge by pop an push
   ofstream fout;
-  if (compute_metric)
+  if (options.compute_metric) // TODO i think this is a mistake, and should actually be options.output_sorted_info
     fout.open(sorted_output_file.c_str());
 
   // pop and push from the heap
@@ -256,27 +303,30 @@ bool process_partial_files(const INPUT_OPTIONS_TAGSORT& options)
   int i, j;
 
   Metrics* metric_gatherer;
-  METRIC_TYPE metric_type_enum;
+  MetricType metric_type_enum;
   if (metric_type.compare("cell")==0)
   {
     metric_gatherer = new CellMetrics;
-    metric_type_enum = CELL;
+    metric_type_enum = MetricType::Cell;
   }
-  if (metric_type.compare("gene")==0)
+  else if (metric_type.compare("gene")==0)
   {
     metric_gatherer = new GeneMetrics;
-    metric_type_enum = GENE;
+    metric_type_enum = MetricType::Gene;
   }
+  else
+    crash("Expected metric_type 'cell' or 'gene', got: " + metric_type);
 
   metric_gatherer->clear();
 
   ofstream fmetric_out;
-  if (compute_metric)
+  if (options.compute_metric)
   {
     fmetric_out.open(metric_output_file.c_str());
     fmetric_out << metric_gatherer->getHeader() << std::endl;
   }
 
+  // TODO just write directly to fout
   stringstream str(stringstream::out | stringstream::binary);
   std::string prev_comp_tag = "";
   while (!heap.empty())
@@ -291,10 +341,7 @@ bool process_partial_files(const INPUT_OPTIONS_TAGSORT& options)
     if (prev_comp_tag.compare(curr_comp_tag) <= 0)
       std::cout << "Expected " << prev_comp_tag << "\n\t\t" << curr_comp_tag << std::endl;
     else
-    {
-      std::cout << "Anomaly " << prev_comp_tag << "\n\t\t" << curr_comp_tag << std::endl;
-      exit(0);
-    }
+      crash("Anomaly " + prev_comp_tag + "\n\t\t" + curr_comp_tag);
 #endif
     i = get<1>(qtuple);  //buffer no
     j = get<2>(qtuple);  //the pointer into the ith buffer array
@@ -304,7 +351,7 @@ bool process_partial_files(const INPUT_OPTIONS_TAGSORT& options)
     // start writing in chunks from the stream buffer
     if (num_alignments%contx.BUF_SIZE==0)
     {
-      if (output_sorted_info)
+      if (options.output_sorted_info)
       {
         fout.write(str.str().c_str(), str.str().length());
         str.clear();
@@ -314,10 +361,10 @@ bool process_partial_files(const INPUT_OPTIONS_TAGSORT& options)
 
     // load into stream buffer
     string field  = contx.data[i][j];
-    if (output_sorted_info)
+    if (options.output_sorted_info)
       str << field << std::endl;
 
-    if (compute_metric)
+    if (options.compute_metric)
       metric_gatherer->parse_line(field, fmetric_out, mitochondrial_genes, metric_type_enum);
     num_alignments += 1;
 
@@ -359,10 +406,11 @@ bool process_partial_files(const INPUT_OPTIONS_TAGSORT& options)
   delete metric_gatherer;
 
   // close the metric file
-  if (compute_metric) fmetric_out.close();
+  if (options.compute_metric)
+    fmetric_out.close();
 
   // write out the remaining data
-  if (output_sorted_info)
+  if (options.output_sorted_info)
   {
     fout.write(str.str().c_str(), str.str().length());
     str.str("");
@@ -370,20 +418,17 @@ bool process_partial_files(const INPUT_OPTIONS_TAGSORT& options)
   }
 
   // close output files as there is no more to write
-  if (output_sorted_info==true)
+  if (options.output_sorted_info)
     fout.close();
 
   std::cout << "Written "<< num_alignments << " alignments in total" << std::endl;
   contx.clear();
-  return true;
 }
 
 /* Flag set by ‘--verbose’. */
 int main(int argc, char** argv)
 {
-  INPUT_OPTIONS_TAGSORT options;
-
-  read_options_tagsort(argc, argv, options);
+  InputOptionsTagsort options = readOptionsTagsort(argc, argv);
 
   std::cout << "bam input " << options.bam_input << std::endl;
   std::cout << "temp folder " << options.temp_folder << std::endl;
@@ -402,11 +447,7 @@ int main(int argc, char** argv)
     a head to compare the values based on the tags used  */
   std::cout << "Merging " <<  partial_files.size() << " sorted files!"<< std::endl;
 
-  if (!process_partial_files(options))
-  {
-    std::cout << "Failed to complete the merging as the number of concurrently "
-              << "open files increased the max limit" << std::endl;
-  }
+  mergeSortedPartialFiles(options);
 
   // we no longer need the partial files
   for (unsigned int i=0; i < partial_files.size(); i++)

@@ -10,9 +10,28 @@
 #include <vector>
 #include <semaphore.h>
 
-#include "datatypes.h"
 #include "utilities.h"
 #include "globals.h"
+
+using TRIPLET = std::tuple<std::string*, std::string*, std::string*>;
+
+using TAGTUPLE = std::tuple<
+    TRIPLET* /*  tuple<std::string *, std::string *, std::string *>*/,
+    std::string /* reference */,
+    std::string /* biotype */,
+    int /* pos */,
+    int /*rev strand   1 for yes, 0 otherwise*/,
+    float /*avg barcode qual score */,
+    float /* frac of barcode qual score >30 */,
+    float /*avg qual seq */,
+    float /*fract of >30 score qual seq*/,
+    int /*NH*/,
+    int /*perfect molecule barcode, 1 is yes, 0 otherwise*/,
+    int /*spliced reads 1 yes, 0 otherwise*/,
+    int /*is duplicate */,
+    int /*perfect cell barcode 1 is yes, 0 otherwise*/,
+    float /* fraction of umi qual score > 30 */
+    >;
 
 /**
  * @brief This function takes a vector of tuples of the tags, sorts them

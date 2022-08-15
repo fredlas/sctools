@@ -29,7 +29,7 @@
 #include "utilities.h"
 #include "input_options.h"
 
-
+// TODO DEDUP
 /// Samrecord bins to be accessed by all threads
 typedef struct SamRecordBins
 {
@@ -81,7 +81,7 @@ typedef struct SamRecordBins
  *         map and vector of correct barcodes
 */
 void process_inputs(const INPUT_OPTIONS_FASTQPROCESS& options,
-                    const WHITE_LIST_DATA* white_list_data);
+                    const WhiteListData* white_list_data);
 
 /**
  * @brief Process one triplet of file R1/R2 and I1 in a thread
@@ -104,7 +104,7 @@ void process_inputs(const INPUT_OPTIONS_FASTQPROCESS& options,
 void process_file(int32_t tindex, std::string filename, String filename1,
                   String filename2,  unsigned int barcode_length,
                   unsigned int umi_length,
-                  const WHITE_LIST_DATA* white_list_data,
+                  const WhiteListData* white_list_data,
                   SAM_RECORD_BINS* samrecord_bins);
 
 /**
