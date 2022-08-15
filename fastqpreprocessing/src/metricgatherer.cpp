@@ -25,7 +25,7 @@ std::string to_nan(float x)
 void Metrics::clear()
 {
   n_reads = 0;
-  noise_reads = 0; //# long polymers, N-sequences; NotImplemented
+  // noise_reads = 0; //# long polymers, N-sequences; NotImplemented
   freeContainer(_fragment_histogram);
   freeContainer(_molecule_histogram);
 
@@ -65,7 +65,7 @@ void Metrics::clear()
 }
 
 
-void Metrics::output_metrics(ofstream& fmetric_out)
+void Metrics::output_metrics(std::ofstream& fmetric_out)
 {
   fmetric_out << std::setprecision(10) <<  prev_tag << ","
               << n_reads << ","
@@ -96,7 +96,7 @@ void Metrics::output_metrics(ofstream& fmetric_out)
 
 
 unsigned int offset = 3;
-void Metrics::parse_line(std::string& str, ofstream& fmetric_out,
+void Metrics::parse_line(std::string& str, std::ofstream& fmetric_out,
                          std::unordered_set<std::string>& mitochondrial_genes,
                          MetricType metric_type)
 {
@@ -309,7 +309,7 @@ void CellMetrics::parse_extra_fields(std::string const& first_tag,
   _genes_histogram[third_tag] += 1;
 }
 
-void CellMetrics::output_metrics_extra(ofstream& fmetric_out)
+void CellMetrics::output_metrics_extra(std::ofstream& fmetric_out)
 {
   fmetric_out << std::setprecision(10)
               << "," << perfect_cell_barcodes
@@ -410,7 +410,7 @@ void GeneMetrics::parse_extra_fields(std::string const& first_tag,
   _cells_histogram[second_tag] += 1;
 }
 
-void GeneMetrics::output_metrics_extra(ofstream& fmetric_out)
+void GeneMetrics::output_metrics_extra(std::ofstream& fmetric_out)
 {
   fmetric_out <<  ","  << number_cells_detected_multiple
               <<  ","  << number_cells_expressing
