@@ -5,7 +5,6 @@
  *  @date   2020-08-27
  ***********************************************/
 
-#include "fastqprocess.h"
 #include "input_options.h"
 #include "utilities.h"
 
@@ -15,8 +14,62 @@
 
 #include <cstdint>
 
-/// maximum file length
-#define MAX_FILE_LENGTH 500
+#include "FastQFile.h"
+#include "FastQStatus.h"
+#include "BaseAsciiMap.h"
+#include "SamFile.h"
+#include "SamValidation.h"
+
+#include <semaphore.h>
+#include <thread>
+#include <string>
+#include <unordered_map>
+#include <iostream>
+#include <fstream>
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <getopt.h>
+#include <vector>
+#include <functional>
+#include <mutex>
+
+#include "utilities.h"
+
+// TODO DEDUP
+/// Samrecord bins to be accessed by all threads
+typedef struct SamRecordBins
+{
+  /// array or array of samrecords
+  /// one array for each reader samrecords[r].
+  /// Note that every samrecord[r][i] for 0 <= i < num_records[r]
+  /// is destined to be written to one specfic output bam file.
+  /// These index of the bam file is one of the vectors "file_index[r][b]",
+  /// where b is one of the bam files index
+  SamRecord** samrecords;
+
+  /// number of records in individual reader threads that
+  /// can be written, i.e., num_records[r] stores the number of
+  /// such records in samrecrods[r]
+  int32_t* num_records;
+
+  /// An array of arrays of vector, one array "file_index[r]" for reader thread r.
+  /// The value vector in file_index[r][i] stores the indices of the samrecords[r]
+  /// where the record in samrecords[r][i], for 0 <= i < num_records[r]
+  /// should be written. This information is used by the writer threads.
+  vector<int32_t>** file_index;
+
+  /// sample name
+  std::string sample_id;
+  int32_t block_size;
+
+  /// number of output bam files, and one writer thread per bam file
+  int16_t num_files;
+  /// flag to stop the writer
+  bool stop;
+  /// the thread (reader) that is currently wanting to write
+  int32_t active_thread_num;
+} SAM_RECORD_BINS;
 
 /// number of samrecords per buffer in each reader
 constexpr int kSamRecordBufferSize = 100000;
@@ -138,12 +191,12 @@ void process_inputs(const InputOptionsFastqProcess& options,
 void fastq_writers(int windex, SAM_RECORD_BINS* samrecord_data)
 {
   std::string r1_output_fname = "fastq_R1_" + std::to_string(windex) + ".fastq.gz";
-  ogzstream r1_out(r1_output_fname);
+  ogzstream r1_out(r1_output_fname.c_str());
   if (!r1_out)
     crash("ERROR: Failed to open R1 fastq file " + r1_output_fname + " for writing");
 
   std::string r2_output_fname = "fastq_R2_" + std::to_string(windex) + ".fastq.gz";
-  ogzstream r2_out(r2_output_fname);
+  ogzstream r2_out(r2_output_fname.c_str());
   if (!r2_out)
     crash("ERROR: Failed to open R2 fastq file " + r2_output_fname + " for writing");
 
