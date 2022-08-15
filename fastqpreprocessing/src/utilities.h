@@ -58,12 +58,4 @@ void crashWithPerror(std::string msg);
 
 void crash(std::string msg);
 
-
-/**
- * @brief examines the existence and size of the input files
- *
-*/
-void printFileInfo(const std::vector<std::string>& fastqs,
-                   const std::string& type);
-
 #endif

@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+const unsigned int kDefaultNumAlignsPerThread = 1000000;
+
 struct InputOptionsFastqReadStructure
 {
   // I1, R1 and R2 files name
@@ -57,12 +59,11 @@ struct InputOptionsFastqProcess
 struct InputOptionsTagsort
 {
   // Initialize some of the values
-  _input_options_tagsort()
+  InputOptionsTagsort()
   {
     bam_input = "";
     gtf_file = "";
     temp_folder =  std::string("/tmp/");
-    alignments_per_thread = NUM_ALNS_PER_THREAD;
     nthreads = 1;
     metric_type = "";
   }
@@ -80,7 +81,7 @@ struct InputOptionsTagsort
   // sorted tsv output file
   std::string sorted_output_file;
 
-  unsigned int alignments_per_thread = NUM_ALNS_PER_THREAD;
+  unsigned int alignments_per_thread = kDefaultNumAlignsPerThread;
   unsigned int nthreads;
   std::string barcode_tag;
   std::string umi_tag;
@@ -88,7 +89,6 @@ struct InputOptionsTagsort
 
   // order of the tags to sort by
   std::unordered_map<std::string, unsigned int> tag_order;
-
 };
 
 InputOptionsFastqProcess readOptionsFastqProcess(int argc, char** argv);

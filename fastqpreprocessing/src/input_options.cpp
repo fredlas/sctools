@@ -5,12 +5,80 @@
  *  @date   2021-08-11
  ***********************************************/
 #include "input_options.h"
+
 #include <experimental/filesystem>
 #include <regex>
 #include <getopt.h>
 #include <cassert>
 
+#include "globals.h"
+
 namespace fs = std::experimental::filesystem;
+
+int64_t filesize(const std::string& filename)
+{
+  FILE* f = fopen(filename.c_str(), "rb");
+
+  int64_t size = 0;
+  if (fseek(f, 0, SEEK_END) == 0)
+    size = ftell(f);
+  fclose(f);
+  return size;
+}
+
+void printFileInfo(const std::vector<std::string>& fastqs,
+                   const std::string& type)
+{
+  if (fastqs.size())
+  {
+    std::cout << "INFO " << type << " files:" << std::endl;
+    for (unsigned int i= 0; i < fastqs.size(); i++)
+    {
+      if (fs::exists(fastqs[i].c_str()))
+      {
+        std::cout << "\t " << fastqs[i]  <<  " exists, file size "
+                  <<  filesize(fastqs[i])  <<  std::endl;
+      }
+      else
+      {
+        std::cout << "ERROR " << fastqs[i] << " is missing!\n";
+        std::cerr << "ERROR " << fastqs[i] << " is missing!\n";
+        exit(1);
+      }
+    }
+  }
+}
+
+int64_t getNumBlocks(const std::vector<std::string>& I1s,
+                     const std::vector<std::string>& R1s,
+                     const std::vector<std::string>& R2s, double bam_size)
+{
+  assert(R1s.size() == R2s.size());
+  double tot_size = 0;
+  for (unsigned int i = 0; i < R1s.size(); i++)
+  {
+    assert(I1s.empty() || I1s.size() == R1s.size());
+    if (!I1s.empty())
+      tot_size += filesize(I1s[i]);
+
+    std::cout << "file " << R1s[i] << " : " << filesize(R1s[i]) << " bytes" << std::endl;
+    tot_size += filesize(R1s[i]);
+    tot_size += filesize(R2s[i]);
+  }
+
+  const int GiB = 1024*1024*1024;
+  return ceil((tot_size / GiB) / bam_size);
+}
+
+int64_t getNumBlocks(const InputOptionsFastqProcess& options)
+{
+  return getNumBlocks(options.I1s, options.R1s, options.R2s, options.bam_size);
+}
+
+int64_t getNumBlocks(const InputOptionsFastqReadStructure& options)
+{
+  return getNumBlocks(options.I1s, options.R1s, options.R2s, options.bam_size);
+}
 
 /** @copydoc readOptionsTagsort */
 InputOptionsTagsort readOptionsTagsort(int argc, char** argv)
@@ -86,19 +154,19 @@ InputOptionsTagsort readOptionsTagsort(int argc, char** argv)
       printf("\n");
       break;
     case 'b':
-      options.bam_input = string(optarg);
+      options.bam_input = std::string(optarg);
       break;
     case 'a':
-      options.gtf_file = string(optarg);
+      options.gtf_file = std::string(optarg);
       break;
     case 't':
-      options.temp_folder = string(optarg);
+      options.temp_folder = std::string(optarg);
       break;
     case 'o':
-      options.sorted_output_file = string(optarg);
+      options.sorted_output_file = std::string(optarg);
       break;
     case 'M':
-      options.metric_output_file = string(optarg);
+      options.metric_output_file = std::string(optarg);
       break;
     case 'p':
       options.alignments_per_thread = atoi(optarg);
@@ -107,22 +175,22 @@ InputOptionsTagsort readOptionsTagsort(int argc, char** argv)
       options.nthreads = atoi(optarg);
       break;
     case 'C':
-      options.barcode_tag = string(optarg);
+      options.barcode_tag = std::string(optarg);
       curr_size = options.tag_order.size();
-      options.tag_order[string(optarg)] = curr_size;
+      options.tag_order[std::string(optarg)] = curr_size;
       break;
     case 'U':
-      options.umi_tag = string(optarg);
+      options.umi_tag = std::string(optarg);
       curr_size = options.tag_order.size();
-      options.tag_order[string(optarg)] = curr_size;
+      options.tag_order[std::string(optarg)] = curr_size;
       break;
     case 'G':
-      options.gene_tag = string(optarg);
+      options.gene_tag = std::string(optarg);
       curr_size = options.tag_order.size();
-      options.tag_order[string(optarg)] = curr_size;
+      options.tag_order[std::string(optarg)] = curr_size;
       break;
     case 'K':
-      options.metric_type = string(optarg);
+      options.metric_type = std::string(optarg);
       break;
     case '?':
     case 'h':
@@ -144,8 +212,6 @@ InputOptionsTagsort readOptionsTagsort(int argc, char** argv)
     }
   }
 
-  bool exit_with_error = false;
-
   // Check the options
   // either metric computation or the sorted tsv file must be produced
   if (!options.output_sorted_info && !options.compute_metric)
@@ -166,7 +232,7 @@ InputOptionsTagsort readOptionsTagsort(int argc, char** argv)
     crash("ERROR: The gtf file name must be provided with metric_type \"cell\"");
 
   // the gtf file should not be gzipped
-  std::regex reg1(".gz$", regex_constants::icase);
+  std::regex reg1(".gz$", std::regex_constants::icase);
   if (std::regex_search(options.gtf_file, reg1))
     crash("ERROR: The gtf file must not be gzipped");
 
@@ -273,22 +339,22 @@ InputOptionsFastqProcess readOptionsFastqProcess(int argc, char** argv)
       options.bam_size = atof(optarg);
       break;
     case 's':
-      options.sample_id = string(optarg);
+      options.sample_id = std::string(optarg);
       break;
     case 'I':
-      options.I1s.push_back(string(optarg));
+      options.I1s.push_back(std::string(optarg));
       break;
     case 'R':
-      options.R1s.push_back(string(optarg));
+      options.R1s.push_back(std::string(optarg));
       break;
     case 'r':
-      options.R2s.push_back(string(optarg));
+      options.R2s.push_back(std::string(optarg));
       break;
     case 'w':
-      options.white_list_file = string(optarg);
+      options.white_list_file = std::string(optarg);
       break;
     case 'F':
-      options.output_format = string(optarg);
+      options.output_format = std::string(optarg);
       break;
     case '?':
     case 'h':
@@ -414,25 +480,25 @@ InputOptionsFastqReadStructure readOptionsFastqSlideseq(int argc, char** argv)
       options.bam_size = atof(optarg);
       break;
     case 'S':
-      options.read_structure = string(optarg);
+      options.read_structure = std::string(optarg);
       break;
     case 's':
-      options.sample_id = string(optarg);
+      options.sample_id = std::string(optarg);
       break;
     case 'I':
-      options.I1s.push_back(string(optarg));
+      options.I1s.push_back(std::string(optarg));
       break;
     case 'R':
-      options.R1s.push_back(string(optarg));
+      options.R1s.push_back(std::string(optarg));
       break;
     case 'r':
-      options.R2s.push_back(string(optarg));
+      options.R2s.push_back(std::string(optarg));
       break;
     case 'w':
-      options.white_list_file = string(optarg);
+      options.white_list_file = std::string(optarg);
       break;
     case 'F':
-      options.output_format = string(optarg);
+      options.output_format = std::string(optarg);
       break;
     case '?':
     case 'h':
@@ -544,16 +610,16 @@ InputOptionsFastqReadStructure readOptionsFastqMetrics(int argc, char** argv)
       printf("\n");
       break;
     case 'S':
-      options.read_structure = string(optarg);
+      options.read_structure = std::string(optarg);
       break;
     case 's':
-      options.sample_id = string(optarg);
+      options.sample_id = std::string(optarg);
       break;
     case 'R':
-      options.R1s.push_back(string(optarg));
+      options.R1s.push_back(std::string(optarg));
       break;
     case 'w':
-      options.white_list_file = string(optarg);
+      options.white_list_file = std::string(optarg);
       break;
     case '?':
     case 'h':
@@ -587,35 +653,4 @@ InputOptionsFastqReadStructure readOptionsFastqMetrics(int argc, char** argv)
     printFileInfo(options.R1s, std::string("R1"));
 
   return options;
-}
-
-int64_t getNumBlocks(const std::vector<std::string>& I1s,
-                     const std::vector<std::string>& R1s,
-                     const std::vector<std::string>& R2s, double bam_size)
-{
-  assert(R1s.size() == R2s.size());
-  double tot_size = 0;
-  for (unsigned int i = 0; i < R1s.size(); i++)
-  {
-    assert(I1s.empty() || I1s.size() == R1s.size());
-    if (!I1s.empty())
-      tot_size += filesize(I1s[i]);
-
-    std::cout << "file " << R1s[i] << " : " << filesize(R1s[i]) << " bytes" << std::endl;
-    tot_size += filesize(R1s[i]);
-    tot_size += filesize(R2s[i]);
-  }
-
-  const int GiB = 1024*1024*1024;
-  return ceil((tot_size / GiB) / bam_size);
-}
-
-int64_t getNumBlocks(const InputOptionsFastqProcess& options)
-{
-  return getNumBlocks(options.I1s, options.R1s, options.R2s, options.bam_size);
-}
-
-int64_t getNumBlocks(const InputOptionsFastqReadStructure& options)
-{
-  return getNumBlocks(options.I1s, options.R1s, options.R2s, options.bam_size);
 }

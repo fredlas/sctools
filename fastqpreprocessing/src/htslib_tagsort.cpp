@@ -5,6 +5,7 @@
  *  @date   2021-08-11
  ***********************************************/
 
+#include "globals.h"
 #include "htslib_tagsort.h"
 
 unsigned int num_thread_deallocations = 0;

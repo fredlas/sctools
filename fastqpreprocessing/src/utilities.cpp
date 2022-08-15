@@ -53,41 +53,6 @@ std::unique_ptr<WhiteListData> readWhiteList(const string& white_list_file)
   return white_list_data;
 }
 
-int64_t filesize(const std::string& filename)
-{
-  FILE* f = fopen(filename.c_str(), "rb");
-
-  int64_t size = 0;
-  if (fseek(f, 0, SEEK_END) == 0)
-    size = ftell(f);
-  fclose(f);
-  return size;
-}
-
-/** @copydoc  printFileInfo */
-void printFileInfo(const std::vector<std::string>& fastqs,
-                   const std::string& type)
-{
-  if (fastqs.size())
-  {
-    std::cout << "INFO " << type << " files:" << std::endl;
-    for (unsigned int i= 0; i < fastqs.size(); i++)
-    {
-      if (fs::exists(fastqs[i].c_str()))
-      {
-        std::cout << "\t " << fastqs[i]  <<  " exists, file size "
-                  <<  filesize(fastqs[i])  <<  std::endl;
-      }
-      else
-      {
-        std::cout << "ERROR " << fastqs[i] << " is missing!\n";
-        std::cerr << "ERROR " << fastqs[i] << " is missing!\n";
-        exit(1);
-      }
-    }
-  }
-}
-
 
 /** @copydoc crashWithPerror */
 void crashWithPerror(std::string msg)
