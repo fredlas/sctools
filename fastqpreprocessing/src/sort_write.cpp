@@ -67,6 +67,7 @@ void write_out_partial_txt_file(const std::vector<TAGTUPLE>& tuple_records,
       str.clear();
     }
 
+    using std::get;
     str << *get<0>(*it->first) /*  first tag */ << "\t"
         << *get<1>(*it->first) /*  second tag */ << "\t"
         << *get<2>(*it->first) /*  third tag */ << "\t"
