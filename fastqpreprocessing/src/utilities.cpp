@@ -89,38 +89,6 @@ void printFileInfo(const std::vector<std::string>& fastqs,
 }
 
 
-int64_t getNumBlocks(const std::vector<std::string>& I1s,
-                     const std::vector<std::string>& R1s,
-                     const std::vector<std::string>& R2s, double bam_size)
-{
-  assert(R1s.size() == R2s.size());
-  double tot_size = 0;
-  for (unsigned int i = 0; i < R1s.size(); i++)
-  {
-    assert(options.I1s.empty() || options.I1s.size() == options.R1s.size());
-    if (!I1s.empty())
-      tot_size += filesize(I1s[i]);
-
-    std::cout << "file " << R1s[i] << " : " << filesize(R1s[i])) << " bytes" << std::endl;
-    tot_size += filesize(R1s[i]);
-    tot_size += filesize(R2s[i]);
-  }
-
-  const int GiB = 1024*1024*1024;
-  return ceil((tot_size / GiB) / options.bam_size);
-}
-
-int64_t getNumBlocks(const InputOptionsFastqProcess& options)
-{
-  return getNumBlocks(options.I1s, options.R1s, options.R2s, options.bam_size);
-}
-
-int64_t getNumBlocks(const InputOptionsFastqReadStructure& options)
-{
-  return getNumBlocks(options.I1s, options.R1s, options.R2s, options.bam_size);
-}
-
-
 /** @copydoc crashWithPerror */
 void crashWithPerror(std::string msg)
 {

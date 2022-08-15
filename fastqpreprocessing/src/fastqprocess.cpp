@@ -6,6 +6,7 @@
  ***********************************************/
 
 #include "fastqprocess.h"
+#include "input_options.h"
 #include "utilities.h"
 
 #include <gzstream.h>

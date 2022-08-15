@@ -5,14 +5,15 @@
  *  @date   2020-08-27
  ***********************************************/
 
-#include "fastq_slideseq.h"
-#include "utilities.h"
-
 #include <gzstream.h>
 #include <iostream>
 #include <fstream>
 
 #include <cstdint>
+
+#include "fastq_slideseq.h"
+#include "input_options.h"
+#include "utilities.h"
 
 /// maximum file length
 #define MAX_FILE_LENGTH 500

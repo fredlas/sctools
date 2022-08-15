@@ -26,9 +26,6 @@
 #include <functional>
 #include <mutex>
 
-#include "utilities.h"
-#include "input_options.h"
-
 
 /// Samrecord bins to be accessed by all threads
 typedef struct SamRecordBins

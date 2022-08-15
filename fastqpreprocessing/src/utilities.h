@@ -21,19 +21,6 @@
 
 enum class MetricType { Cell, Gene };
 
-/**
- * @brief Compute the number of bam files
- *
- * @details
- *  Adds up the size of the input file and divides by the size of
- * user specified bam file size
-
- * @param options Input options structure that contains file name
-*/
-int64_t getNumBlocks(const InputOptionsFastqProcess& options);
-int64_t getNumBlocks(const InputOptionsFastqReadStructure& options);
-
-
 
 // structure for correcting the barcodes
 struct WhiteListData
