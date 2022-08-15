@@ -283,7 +283,7 @@ void process_alignments(InputOptionsTagsort& options, bam1_t** aln, bam_hdr_t* b
 
   // delete the triplet
   for (auto it=tuple_records.begin(); it != tuple_records.end(); it++)
-    delete get<0>(*it);
+    delete std::get<0>(*it);
 
   //  free the memory for the strings
   for (auto it=string_map.begin(); it != string_map.end(); it++)
