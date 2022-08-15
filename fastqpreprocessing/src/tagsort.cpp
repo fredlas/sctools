@@ -11,7 +11,7 @@
 #include <cctype>
 #include <chrono>
 #include <fstream>
-#include <priority_queue>
+#include <queue>
 #include <regex>
 #include <string>
 
