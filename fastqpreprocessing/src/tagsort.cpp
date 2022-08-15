@@ -14,6 +14,7 @@
 #include <regex>
 #include <string>
 #include <sstream>
+#include <unordered_set>
 
 #include "htslib_tagsort.h"
 #include "metricgatherer.h"
@@ -115,7 +116,7 @@ unsigned int split_buffer_to_fields(std::string const& str, char* line, char** f
 }
 
 
-std::set<std::string> get_mitochondrial_gene_names(std::string const& gtf_filename)
+std::unordered_set<std::string> get_mitochondrial_gene_names(std::string const& gtf_filename)
 {
   char field_buffer[1000];
   char* fields[20];
@@ -126,7 +127,7 @@ std::set<std::string> get_mitochondrial_gene_names(std::string const& gtf_filena
   char keyval_buffer[1000];
   char* keyvals[20];
 
-  std::set<std::string> mitochondrial_gene_ids;
+  std::unordered_set<std::string> mitochondrial_gene_ids;
   std::ifstream input_file(gtf_filename);
   if (!input_file)
     crash("ERROR failed to open the GTF file " + gtf_filename);
@@ -241,7 +242,7 @@ void mergeSortedPartialFiles(InputOptionsTagsort const& options)
   std::string const& metric_type  = options.metric_type;
   std::string const& metric_output_file = options.metric_output_file;
 
-  std::set<std::string> mitochondrial_genes;
+  std::unordered_set<std::string> mitochondrial_genes;
   if (!options.gtf_file.empty())
     mitochondrial_genes = get_mitochondrial_gene_names(options.gtf_file);
 
@@ -310,7 +311,7 @@ void mergeSortedPartialFiles(InputOptionsTagsort const& options)
 
   metric_gatherer->clear();
 
-  ofstream fmetric_out;
+  std::ofstream fmetric_out;
   if (options.compute_metric)
   {
     fmetric_out.open(metric_output_file.c_str());
@@ -318,13 +319,13 @@ void mergeSortedPartialFiles(InputOptionsTagsort const& options)
   }
 
   // TODO just write directly to fout
-  std::stringstream str(stringstream::out | stringstream::binary);
+  std::stringstream str(std::stringstream::out | std::stringstream::binary);
   std::string prev_comp_tag = "";
   while (!heap.empty())
   {
     // read the top
     QUEUETUPLE qtuple = heap.top();
-    std::string curr_comp_tag = get<0>(qtuple);
+    std::string curr_comp_tag = std::get<0>(qtuple);
     assert(prev_comp_tag.compare(curr_comp_tag) <= 0);
 
 #ifdef DEBUG
@@ -334,8 +335,8 @@ void mergeSortedPartialFiles(InputOptionsTagsort const& options)
     else
       crash("Anomaly " + prev_comp_tag + "\n\t\t" + curr_comp_tag);
 #endif
-    i = get<1>(qtuple);  //buffer no
-    j = get<2>(qtuple);  //the pointer into the ith buffer array
+    i = std::get<1>(qtuple);  //buffer no
+    j = std::get<2>(qtuple);  //the pointer into the ith buffer array
 
     heap.pop();
 
