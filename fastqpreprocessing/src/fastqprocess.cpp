@@ -57,7 +57,7 @@ typedef struct SamRecordBins
   /// The value vector in file_index[r][i] stores the indices of the samrecords[r]
   /// where the record in samrecords[r][i], for 0 <= i < num_records[r]
   /// should be written. This information is used by the writer threads.
-  vector<int32_t>** file_index;
+  std::vector<int32_t>** file_index;
 
   /// sample name
   std::string sample_id;
@@ -102,12 +102,12 @@ SAM_RECORD_BINS* create_samrecord_holders(int16_t nthreads, const std::string sa
     crash("Failed to allocate memory for the num records array");
 
   // for each thread  we allocate an array of indices (to final output files)
-  if ((samrecord_data->file_index = new vector<int>* [nthreads]) == 0)
+  if ((samrecord_data->file_index = new std::vector<int>* [nthreads]) == 0)
     crash("Failed to allocate memory for the pointer for array of vectors");
 
   // for each read thread allocate the index vector
   for (int i = 0; i < nthreads; i++)
-    if ((samrecord_data->file_index[i] = new vector<int>[num_files]) == 0)
+    if ((samrecord_data->file_index[i] = new std::vector<int>[num_files]) == 0)
       crash("Failed to allocate memory for the vectors for index of file");
 
   // set the remaining data

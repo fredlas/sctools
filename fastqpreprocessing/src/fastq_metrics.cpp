@@ -28,7 +28,7 @@ std::vector<std::pair<char, int>> parseReadStructure(std::string read_structure)
   return ret;
 }
 
-int getLengthOfType(string read_structure, char type)
+int getLengthOfType(std::string read_structure, char type)
 {
   int total_length = 0;
   for (auto [curr_type, length] : parseReadStructure(read_structure))
@@ -37,7 +37,7 @@ int getLengthOfType(string read_structure, char type)
   return total_length;
 }
 
-void PositionWeightMatrix::recordChunk(string s)
+void PositionWeightMatrix::recordChunk(std::string s)
 {
   for (int index = 0; index < s.size(); index++)
   {
@@ -182,7 +182,7 @@ void process_inputs(const InputOptionsFastqReadStructure& options,
   int CB_length = getLengthOfType(options.read_structure, 'C');
 
   // create the data for the threads
-  vector<FastQMetricsShard> fastqMetrics;
+  std::vector<FastQMetricsShard> fastqMetrics;
   for (int i = 0; i < num_files; i++)
     fastqMetrics.emplace_back(options.read_structure);
 

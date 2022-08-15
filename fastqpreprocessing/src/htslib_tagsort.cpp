@@ -92,7 +92,7 @@ using namespace std;
 void process_alignments(InputOptionsTagsort& options, bam1_t** aln, bam_hdr_t* bamHdr, unsigned int buf_no, unsigned int n)
 {
   int threshold = THRESHOLD; //qual score threshold
-  vector<TAGTUPLE>  tuple_records;
+  std::vector<TAGTUPLE>  tuple_records;
   std::unordered_map<std::string, std::string*>  string_map;
   std::string tags[3];
 
@@ -315,9 +315,8 @@ void process_alignments(InputOptionsTagsort& options, bam1_t** aln, bam_hdr_t* b
 */
 void create_sorted_file_splits_htslib(InputOptionsTagsort& options)
 {
-
-  string input_bam = options.bam_input;
-  string tmp_folder = options.temp_folder;
+  std::string input_bam = options.bam_input;
+  std::string tmp_folder = options.temp_folder;
 
   // size of individual chunks to sort in memory as an approx 20 mil alignments makes 1 GB bam
   //open bam file

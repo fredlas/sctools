@@ -17,7 +17,7 @@ inline void freeContainer(T& p_container)
 
 std::string to_nan(float x)
 {
-  stringstream s;
+  std::stringstream s;
   s << std::setprecision(10) << x;
   return x==-1 ? "nan" : s.str();
 }
@@ -172,7 +172,7 @@ void Metrics::parse_line(std::string& str, ofstream& fmetric_out,
   // get components that define a unique sequence fragment and increment the histogram
   std::string position_str = record[offset + 2];
   std::string strand = std::stoi(std::string(record[offset + 3]))==1 ? "true" : "false";
-  string reference = record[offset + 0];
+  std::string reference = record[offset + 0];
 
   std::string _ref_pos_str_tags = reference + std::string("\t") +
                                   position_str + std::string("\t") +

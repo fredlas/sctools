@@ -39,7 +39,7 @@ std::string randomString(size_t length)
 }
 
 /** @copydoc write_out_partial_txt_file */
-void write_out_partial_txt_file(const vector<TAGTUPLE>& tuple_records,
+void write_out_partial_txt_file(const std::vector<TAGTUPLE>& tuple_records,
                                 std::string const& tmp_folder)
 {
   std::string tempfile = tmp_folder + "/" + randomString() + ".txt";
@@ -54,7 +54,7 @@ void write_out_partial_txt_file(const vector<TAGTUPLE>& tuple_records,
 
   std::sort(index_pairs.begin(), index_pairs.end(), sortbyfirst);
 
-  stringstream str(stringstream::out|stringstream::binary);
+  std::stringstream str(stringstream::out|stringstream::binary);
 
   for (auto it=index_pairs.begin(); it != index_pairs.end(); it++, k++)
   {

@@ -11,16 +11,17 @@
 #include <chrono>
 #include <fstream>
 #include <regex>
+#include <string>
 
 struct Context
 {
-  vector<vector<std::string>> data;
-  vector<ifstream*> file_handles;
+  std::vector<std::vector<std::string>> data;
+  std::vector<std::ifstream*> file_handles;
 
-  vector<long int> file_offset;
-  vector<int> data_size;
-  vector<int> ptrs;
-  vector<bool> isempty;
+  std::vector<long int> file_offset;
+  std::vector<int> data_size;
+  std::vector<int> ptrs;
+  std::vector<bool> isempty;
   int i = -1;
   int num_active_files = 0;
   int BUF_SIZE;
@@ -79,14 +80,14 @@ using QUEUETUPLE = std::tuple<std::string, int, int>;
 extern std::vector<string> partial_files;
 int filling_counter = 0;
 
-inline string ltrim(std::string& s)
+inline std::string ltrim(std::string& s)
 {
   auto it = find_if_not(s.begin(), s.end(), [](int c) { return isspace(c); });
   s.erase(s.begin(), it);
   return s;
 }
 
-inline string rtrim(string& s)
+inline std::string rtrim(string& s)
 {
   auto it = find_if_not(s.rbegin(), s.rend(), [](int c) { return isspace(c); }).base();
   s.erase(it, s.end());
@@ -127,7 +128,7 @@ std::set<std::string> get_mitochondrial_gene_names(const std::string& gtf_filena
   char* keyvals[20];
 
   std::set<std::string> mitochondrial_gene_ids;
-  ifstream input_file(gtf_filename, std::ifstream::in);
+  std::ifstream input_file(gtf_filename);
   if (!input_file)
     crash("ERROR failed to open the GTF file " + gtf_filename);
 
@@ -327,7 +328,7 @@ void mergeSortedPartialFiles(const InputOptionsTagsort& options)
   }
 
   // TODO just write directly to fout
-  stringstream str(stringstream::out | stringstream::binary);
+  std::stringstream str(stringstream::out | stringstream::binary);
   std::string prev_comp_tag = "";
   while (!heap.empty())
   {
@@ -360,7 +361,7 @@ void mergeSortedPartialFiles(const InputOptionsTagsort& options)
     }
 
     // load into stream buffer
-    string field  = contx.data[i][j];
+    std::string field  = contx.data[i][j];
     if (options.output_sorted_info)
       str << field << std::endl;
 
