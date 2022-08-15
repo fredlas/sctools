@@ -144,7 +144,7 @@ void FastQMetricsShard::processShard(String filenameR1, std::string read_structu
   fastQFileR1.closeFile();
 }
 
-PositionWeightMatrix& PositionWeightMatrix::operator+=(const PositionWeightMatrix& rhs)
+PositionWeightMatrix& PositionWeightMatrix::operator+=(PositionWeightMatrix const& rhs)
 {
   for (int i=0; i < A.size(); i++)
   {
@@ -157,7 +157,7 @@ PositionWeightMatrix& PositionWeightMatrix::operator+=(const PositionWeightMatri
   return *this;
 }
 
-FastQMetricsShard& FastQMetricsShard::operator+=(const FastQMetricsShard& rhs)
+FastQMetricsShard& FastQMetricsShard::operator+=(FastQMetricsShard const& rhs)
 {
   for (auto [key,value] : rhs.barcode_counts_)
     barcode_counts_[key] += value;
@@ -170,7 +170,7 @@ FastQMetricsShard& FastQMetricsShard::operator+=(const FastQMetricsShard& rhs)
 }
 
 /** @copydoc process_inputs */
-void process_inputs(const InputOptionsFastqReadStructure& options,
+void process_inputs(InputOptionsFastqReadStructure const& options,
                     const WhiteListData* white_list_data)
 {
   // number of files based on the input size

@@ -93,7 +93,7 @@ inline std::string rtrim(std::string& s)
   return s;
 }
 
-unsigned int split_buffer_to_fields(const std::string& str, char* line, char** fields, char delim)
+unsigned int split_buffer_to_fields(std::string const& str, char* line, char** fields, char delim)
 {
   // copy the string to a buffer to split by tab
   str.copy(line, str.size(), 0);
@@ -115,7 +115,7 @@ unsigned int split_buffer_to_fields(const std::string& str, char* line, char** f
 }
 
 
-std::set<std::string> get_mitochondrial_gene_names(const std::string& gtf_filename)
+std::set<std::string> get_mitochondrial_gene_names(std::string const& gtf_filename)
 {
   char field_buffer[1000];
   char* fields[20];
@@ -235,11 +235,11 @@ void fill_buffer(Context& contx)
 
 }
 
-void mergeSortedPartialFiles(const InputOptionsTagsort& options)
+void mergeSortedPartialFiles(InputOptionsTagsort const& options)
 {
-  const std::string& sorted_output_file = options.sorted_output_file;
-  const std::string& metric_type  = options.metric_type;
-  const std::string& metric_output_file = options.metric_output_file;
+  std::string const& sorted_output_file = options.sorted_output_file;
+  std::string const& metric_type  = options.metric_type;
+  std::string const& metric_output_file = options.metric_output_file;
 
   std::set<std::string> mitochondrial_genes;
   if (!options.gtf_file.empty())

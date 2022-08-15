@@ -15,7 +15,7 @@
 
 namespace fs = std::experimental::filesystem;
 
-int64_t filesize(const std::string& filename)
+int64_t filesize(std::string const& filename)
 {
   FILE* f = fopen(filename.c_str(), "rb");
 
@@ -26,8 +26,8 @@ int64_t filesize(const std::string& filename)
   return size;
 }
 
-void printFileInfo(const std::vector<std::string>& fastqs,
-                   const std::string& type)
+void printFileInfo(std::vector<std::string> const& fastqs,
+                   std::string const& type)
 {
   if (fastqs.size())
   {
@@ -49,9 +49,9 @@ void printFileInfo(const std::vector<std::string>& fastqs,
   }
 }
 
-int64_t getNumBlocks(const std::vector<std::string>& I1s,
-                     const std::vector<std::string>& R1s,
-                     const std::vector<std::string>& R2s, double bam_size)
+int64_t getNumBlocks(std::vector<std::string> const& I1s,
+                     std::vector<std::string> const& R1s,
+                     std::vector<std::string> const& R2s, double bam_size)
 {
   assert(R1s.size() == R2s.size());
   double tot_size = 0;
@@ -70,12 +70,12 @@ int64_t getNumBlocks(const std::vector<std::string>& I1s,
   return ceil((tot_size / GiB) / bam_size);
 }
 
-int64_t getNumBlocks(const InputOptionsFastqProcess& options)
+int64_t getNumBlocks(InputOptionsFastqProcess const& options)
 {
   return getNumBlocks(options.I1s, options.R1s, options.R2s, options.bam_size);
 }
 
-int64_t getNumBlocks(const InputOptionsFastqReadStructure& options)
+int64_t getNumBlocks(InputOptionsFastqReadStructure const& options)
 {
   return getNumBlocks(options.I1s, options.R1s, options.R2s, options.bam_size);
 }

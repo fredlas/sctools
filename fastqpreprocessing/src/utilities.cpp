@@ -10,18 +10,18 @@
 namespace fs = std::experimental::filesystem;
 
 /** @copydoc readWhiteList */
-std::unique_ptr<WhiteListData> readWhiteList(const string& white_list_file)
+std::unique_ptr<WhiteListData> readWhiteList(std::string const& white_list_file)
 {
   const char ATCG[] = {'A', 'C', 'G', 'T', 'N'};
 
-  std::ifstream file(white_list_file, ios::in);
+  std::ifstream file(white_list_file);
   if (!file.is_open())
     crash("Couldn't open whitelist file " + white_list_file);
 
   auto white_list_data = std::make_unique<WhiteListData>();
   int k = 0;
   // read data from file object and put it into string.
-  for (string tp; getline(file, tp); )
+  for (std::string tp; getline(file, tp); )
   {
     white_list_data->barcodes.push_back(tp);
 

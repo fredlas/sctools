@@ -252,7 +252,7 @@ void fillSamRecord(SamRecord* samRecord, FastQFile& fastQFileI1,
  *
  * @return the bucket number where the current SamRecord should go to
 */
-int32_t getBucketIndex(const std::string& barcode, SamRecord* samRecord,
+int32_t getBucketIndex(std::string const& barcode, SamRecord* samRecord,
                        const WhiteListData* white_list_data, SAM_RECORD_BINS* samrecord_data,
                        int* n_barcode_corrected, int* n_barcode_correct, int* n_barcode_errors)
 {
@@ -571,7 +571,7 @@ void fastq_writers(int windex, SAM_RECORD_BINS* samrecord_data)
  * @params white_list_data data-structure to store barcode correction
  *         map and vector of correct barcodes
 */
-void process_inputs(const InputOptionsFastqProcess& options,
+void process_inputs(InputOptionsFastqProcess const& options,
                     const WhiteListData* white_list_data)
 {
   // number of files based on the input size

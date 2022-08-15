@@ -99,7 +99,7 @@ InputOptionsFastqReadStructure readOptionsFastqSlideseq(int argc, char** argv);
 
 InputOptionsFastqReadStructure readOptionsFastqMetrics(int argc, char** argv);
 
-int64_t getNumBlocks(const InputOptionsFastqProcess& options);
-int64_t getNumBlocks(const InputOptionsFastqReadStructure& options);
+int64_t getNumBlocks(InputOptionsFastqProcess const& options);
+int64_t getNumBlocks(InputOptionsFastqReadStructure const& options);
 
 #endif // __SCTOOLS_FASTQPREPROCESSING_INPUT_OPTIONS_H_

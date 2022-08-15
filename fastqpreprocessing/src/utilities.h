@@ -43,7 +43,7 @@ struct WhiteListData
  * @return a stricture containing the barcode/1-mutation barcode to index
  *         of the correct barcode
 */
-std::unique_ptr<WhiteListData> readWhiteList(const std::string& white_list_file);
+std::unique_ptr<WhiteListData> readWhiteList(std::string const& white_list_file);
 
 /**
  * @brief Print system error and exit

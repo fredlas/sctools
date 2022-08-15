@@ -21,7 +21,7 @@ class PositionWeightMatrix
 public:
   PositionWeightMatrix(int length): A(length), C(length), G(length), T(length), N(length) {}
   void recordChunk(std::string s);
-  PositionWeightMatrix& operator+=(const PositionWeightMatrix& rhs);
+  PositionWeightMatrix& operator+=(PositionWeightMatrix const& rhs);
   void writeToFile(std::string filename);
 
   std::vector<int> A;
@@ -41,7 +41,7 @@ public:
   static void mergeMetricsShardsToFile(std::string filename_prefix,
                                        std::vector<FastQMetricsShard> shards,
                                        int umi_length, int CB_length);
-  FastQMetricsShard& operator+=(const FastQMetricsShard& rhs);
+  FastQMetricsShard& operator+=(FastQMetricsShard const& rhs);
 
 
 private:

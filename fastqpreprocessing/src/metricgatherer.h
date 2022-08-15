@@ -177,9 +177,9 @@ public:
 
   void output_metrics(std::ofstream& fmetric_out);
   virtual void output_metrics_extra(std::ofstream& fmetric_out) = 0;
-  virtual void parse_extra_fields(const std::string& first_tag,
-                                  const std::string& second_tag,
-                                  const std::string& third_tag,
+  virtual void parse_extra_fields(std::string const& first_tag,
+                                  std::string const& second_tag,
+                                  std::string const& third_tag,
                                   char** record) = 0;
   virtual void finalize(std::unordered_set<std::string>& mitochondrial_genes);
   virtual void clear();
@@ -233,9 +233,9 @@ private:
 public:
   std::string getHeader() override;
   void output_metrics_extra(ofstream& fmetric_out) override;
-  void parse_extra_fields(const std::string& first_tag,
-                          const std::string& second_tag,
-                          const std::string& third_tag,
+  void parse_extra_fields(std::string const& first_tag,
+                          std::string const& second_tag,
+                          std::string const& third_tag,
                           char** record) override;
 
   void finalize(std::unordered_set<std::string>& mitochondrial_genes);
@@ -267,9 +267,9 @@ public:
 public:
   std::string getHeader() override;
   void output_metrics_extra(ofstream& fmetric_out) override;
-  void parse_extra_fields(const std::string& first_tag,
-                          const std::string& second_tag,
-                          const std::string& third_tag,
+  void parse_extra_fields(std::string const& first_tag,
+                          std::string const& second_tag,
+                          std::string const& third_tag,
                           char** record) override;
 
   void finalize(std::unordered_set<std::string>& mitochondrial_genes);

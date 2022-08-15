@@ -82,8 +82,8 @@ sem_t* semaphores = 0;
 sem_t* semaphores_workers = 0;
 
 /** @copydoc create_record_holders */
-SAM_RECORD_BINS* create_samrecord_holders(int16_t nthreads, const std::string sample_id,
-                                          int16_t num_files)
+SAM_RECORD_BINS* create_samrecord_holders(
+    int16_t nthreads, const std::string sample_id, int16_t num_files)
 {
   // samrecord data to hold buffer for the reader
   SAM_RECORD_BINS* samrecord_data = new SAM_RECORD_BINS;
@@ -116,7 +116,7 @@ SAM_RECORD_BINS* create_samrecord_holders(int16_t nthreads, const std::string sa
 }
 
 /** @copydoc process_inputs */
-void process_inputs(const InputOptionsFastqReadStructure& options,
+void process_inputs(InputOptionsFastqReadStructure const& options,
                     const WhiteListData* white_list_data)
 {
   // number of files based on the input size
@@ -423,7 +423,7 @@ void fillSamRecordWithReadStructure(SamRecord* samRecord, FastQFile& fastQFileI1
  *
  * @return the bucket number where the current SamRecord should go to
 */
-int32_t getBucketIndex(const std::string& barcode, SamRecord* samRecord,
+int32_t getBucketIndex(std::string const& barcode, SamRecord* samRecord,
                        const WhiteListData* white_list_data, SAM_RECORD_BINS* samrecord_data,
                        int* n_barcode_corrected, int* n_barcode_correct, int* n_barcode_errors)
 {

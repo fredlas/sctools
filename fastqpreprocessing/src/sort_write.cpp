@@ -11,8 +11,8 @@
 extern std::vector<std::string> partial_files;
 extern std::mutex mtx;
 
-inline bool sortbyfirst(const std::pair<TRIPLET*, int>& a,
-                        const std::pair<TRIPLET*, int>& b)
+inline bool sortbyfirst(std::pair<TRIPLET*, int> const& a,
+                        std::pair<TRIPLET*, int> const& b)
 {
   using std::get;
   if ((*get<0>(*a.first)).compare(*get<0>(*b.first)) != 0)
@@ -41,7 +41,7 @@ std::string randomString()
 }
 
 /** @copydoc write_out_partial_txt_file */
-void write_out_partial_txt_file(const std::vector<TAGTUPLE>& tuple_records,
+void write_out_partial_txt_file(std::vector<TAGTUPLE> const& tuple_records,
                                 std::string const& tmp_folder)
 {
   using std::get;
