@@ -115,6 +115,137 @@ SAM_RECORD_BINS* create_samrecord_holders(
   return samrecord_data;
 }
 
+/**
+ * @brief Function for the writer thread
+ *
+ * @detail
+ *  Dependeing on the number of output bam files there are as many
+ * writer thread as there are output bam files. Each writer thread
+ * writers into only one bam file
+ *
+ * @param  windex  index of the writer thread
+ * @param samrecord_bins  bins for samrecords from the reader threads
+*/
+void bam_writers(int windex, SAM_RECORD_BINS* samrecord_data)
+{
+  std::string bam_out_fname = "subfile_" + std::to_string(windex) + ".bam";
+  SamFile samOut;
+  samOut.OpenForWrite(bam_out_fname.c_str());
+
+  // Write the sam header.
+  SamFileHeader samHeader;
+
+  // add the HD tags for the header
+  samHeader.setHDTag("VN", "1.6");
+  samHeader.setHDTag("SO", "unsorted");
+
+  // add the RG group tags
+  SamHeaderRG* headerRG = new SamHeaderRG;
+  headerRG->setTag("ID", "A");
+  headerRG->setTag("SM", samrecord_data->sample_id.c_str());
+  samHeader.addRG(headerRG);
+
+  // add the header to the output bam
+  samOut.WriteHeader(samHeader);
+
+  // keep writing forever, until there is a flag to stop
+  while (true)
+  {
+    // wait until some data is ready from a reader thread
+    if (sem_wait(&semaphores[windex]) == -1)
+      crashWithPerror("sem_wait:semaphores");
+
+    // write out the record buffers for the reader thread "active_thread_num"
+    // that signalled that buffer is ready to be written
+    SamRecord* samRecord = samrecord_data->samrecords[samrecord_data->active_thread_num];
+    // go through the index of the samrecords that are stored for the current
+    // writer, i.e., "windex" or the corresponding BAM file
+    for (auto index : samrecord_data->file_index[samrecord_data->active_thread_num][windex])
+      samOut.WriteRecord(samHeader, samRecord[index]);
+
+    // lets the reads thread know that I am done writing the
+    // buffer that are destined to be my file
+    if (sem_post(&semaphores_workers[windex]) == -1)
+      crashWithPerror("sem_post: semaphores_workers");
+
+    // time to stop variable is valid
+    if (samrecord_data->stop)
+      break;
+  }
+
+  // close the bamfile
+  samOut.Close();
+}
+
+/**
+ * @brief Function for the writer thread
+ *
+ * @detail
+ *  Dependeing on the number of output bam files there are as many
+ * writer thread as there are output bam files. Each writer thread
+ * writers into only one bam file
+ *
+ * @param  windex  index of the writer thread
+ * @param samrecord_bins  bins for samrecords from the reader threads
+*/
+void fastq_writers(int windex, SAM_RECORD_BINS* samrecord_data)
+{
+  std::string r1_output_fname = "fastq_R1_" + std::to_string(windex) + ".fastq.gz";
+  ogzstream r1_out(r1_output_fname.c_str());
+  if (!r1_out)
+    crash("ERROR: Failed to open R1 fastq file " + r1_output_fname + " for writing");
+
+  std::string r2_output_fname = "fastq_R2_" + std::to_string(windex) + ".fastq.gz";
+  ogzstream r2_out(r2_output_fname.c_str());
+  if (!r2_out)
+    crash("ERROR: Failed to open R2 fastq file " + r2_output_fname + " for writing");
+
+  // keep writing forever, until there is a flag to stop
+  while (true)
+  {
+    // wait until some data is ready from a reader thread
+    if (sem_wait(&semaphores[windex]) == -1)
+      crashWithPerror("sem_wait:semaphores");
+
+    // write out the record buffers for the reader thread "active_thread_num"
+    // that signalled that buffer is ready to be written
+    SamRecord* samRecord = samrecord_data->samrecords[samrecord_data->active_thread_num];
+
+    // go through the index of the samrecords that are stored for the current
+    // writer, i.e., "windex" or the corresponding BAM file
+    for (auto index : samrecord_data->file_index[samrecord_data->active_thread_num][windex])
+    {
+      //       samOut.WriteRecord(samHeader, samRecord[index]);
+      r1_out << "@" << samRecord[index].getReadName() << std::endl
+             << samRecord[index].getString("CR").c_str() << samRecord[index].getString("UR") << std::endl
+             << "+" << std::endl
+             << samRecord[index].getString("CY") << samRecord[index].getString("UY") << std::endl;
+    }
+
+    for (auto index : samrecord_data->file_index[samrecord_data->active_thread_num][windex])
+    {
+      //       samOut.WriteRecord(samHeader, samRecord[index]);
+      r2_out << "@" << samRecord[index].getReadName() << std::endl
+             << samRecord[index].getSequence() << std::endl
+             << "+" << std::endl
+             << samRecord[index].getQuality() << std::endl;
+    }
+
+    // lets the reads thread know that I am done writing the
+    // buffer that are destined to be my file
+    if (sem_post(&semaphores_workers[windex]) == -1)
+      crashWithPerror("sem_post: semaphores_workers");
+
+    // time to stop variable is valid
+    if (samrecord_data->stop)
+      break;
+  }
+
+  // close the fastq files
+  r1_out.close();
+  r2_out.close();
+}
+
 /** @copydoc process_inputs */
 void process_inputs(InputOptionsFastqReadStructure const& options,
                     const WhiteListData* white_list_data)
@@ -184,142 +315,6 @@ void process_inputs(InputOptionsFastqReadStructure const& options,
 
   // delete the records
   delete [] samrecord_data->num_records;
-}
-
-void fastq_writers(int windex, SAM_RECORD_BINS* samrecord_data)
-{
-  std::string outputfile;
-  char buf[MAX_FILE_LENGTH];
-
-  // open to write the outputfile
-  // name of the output R1 fastq file
-  sprintf(buf, "fastq_R1_%d.fastq.gz", windex);
-  outputfile = buf;
-  //ofstream r1_out(outputfile.c_str(), ios::out);
-  ogzstream r1_out(outputfile.c_str());
-  //if (!r1_out.is_open()) {
-  if (!r1_out.good())
-  {
-    error_message("ERROR: Failed open R1 fastq file\n");
-    exit(1);
-  }
-
-  // name of the output R1 fastq file
-  sprintf(buf, "fastq_R2_%d.fastq.gz", windex);
-  outputfile = buf;
-  //ofstream r2_out(outputfile.c_str(), ios::out);
-  ogzstream r2_out(outputfile.c_str());
-  //if (!r2_out.is_open()) {
-  if (!r2_out.good())
-  {
-    error_message("ERROR: Failed open R2 fastq file\n");
-    exit(1);
-  }
-
-  // keep writing forever, until there is a flag to stop
-  while (true)
-  {
-    // wait until some data is ready from a reader thread
-    if (sem_wait(&semaphores[windex]) == -1)
-      crashWithPerror("sem_wait:semaphores");
-
-    // write out the record buffers for the reader thread "active_thread_num"
-    // that signalled that buffer is ready to be written
-    SamRecord* samRecord = samrecord_data->samrecords[samrecord_data->active_thread_num];
-
-    // go through the index of the samrecords that are stored for the current
-    // writer, i.e., "windex" or the corresponding BAM file
-    for (auto index : samrecord_data->file_index[samrecord_data->active_thread_num][windex])
-    {
-      //       samOut.WriteRecord(samHeader, samRecord[index]);
-      r1_out << "@" << samRecord[index].getReadName() << std::endl
-             << samRecord[index].getString("CR").c_str() << samRecord[index].getString("UR") << std::endl
-             << "+" << std::endl
-             << samRecord[index].getString("CY") << samRecord[index].getString("UY") << std::endl;
-    }
-
-    for (auto index : samrecord_data->file_index[samrecord_data->active_thread_num][windex])
-    {
-      //       samOut.WriteRecord(samHeader, samRecord[index]);
-      r2_out << "@" << samRecord[index].getReadName() << std::endl
-             << samRecord[index].getSequence() << std::endl
-             << "+" << std::endl
-             << samRecord[index].getQuality() << std::endl;
-    }
-
-    // lets the reads thread know that I am done writing the
-    // buffer that are destined to be my file
-    if (sem_post(&semaphores_workers[windex]) == -1)
-      crashWithPerror("sem_post: semaphores_workers");
-
-    // time to stop variable is valid
-    if (samrecord_data->stop)
-      break;
-  }
-
-  // close the fastq files
-  r1_out.close();
-  r2_out.close();
-}
-
-
-/** @copydoc bam_writers */
-void bam_writers(int windex, SAM_RECORD_BINS* samrecord_data)
-{
-  SamFile samOut;
-  std::string outputfile;
-
-  // name of the output file
-  char buf[MAX_FILE_LENGTH];
-  sprintf(buf, "subfile_%d.bam", windex);
-  outputfile = buf;
-
-  // open to write the outputfile
-  samOut.OpenForWrite(outputfile.c_str());
-
-  // Write the sam header.
-  SamFileHeader samHeader;
-
-  // add the HD tags for the header
-  samHeader.setHDTag("VN", "1.6");
-  samHeader.setHDTag("SO", "unsorted");
-
-  // add the RG group tags
-  SamHeaderRG* headerRG = new SamHeaderRG;
-  headerRG->setTag("ID", "A");
-  headerRG->setTag("SM", samrecord_data->sample_id.c_str());
-  samHeader.addRG(headerRG);
-
-  // add the header to the output bam
-  samOut.WriteHeader(samHeader);
-
-  // keep writing forever, until there is a flag to stop
-  while (true)
-  {
-    // wait until some data is ready from a reader thread
-    if (sem_wait(&semaphores[windex]) == -1)
-      crashWithPerror("sem_wait:semaphores");
-
-    // write out the record buffers for the reader thread "active_thread_num"
-    // that signalled that buffer is ready to be written
-    SamRecord* samRecord = samrecord_data->samrecords[samrecord_data->active_thread_num];
-    // go through the index of the samrecords that are stored for the current
-    // writer, i.e., "windex" or the corresponding BAM file
-    for (auto index : samrecord_data->file_index[samrecord_data->active_thread_num][windex])
-      samOut.WriteRecord(samHeader, samRecord[index]);
-
-    // lets the reads thread know that I am done writing the
-    // buffer that are destined to be my file
-    if (sem_post(&semaphores_workers[windex]) == -1)
-      crashWithPerror("sem_post: semaphores_workers");
-
-    // time to stop variable is valid
-    if (samrecord_data->stop)
-      break;
-  }
-
-  // close the bamfile
-  samOut.Close();
 }
 
 std::vector<std::pair<char, int>> parseReadStructure(std::string read_structure)
