@@ -246,6 +246,138 @@ void fastq_writers(int windex, SAM_RECORD_BINS* samrecord_data)
   r2_out.close();
 }
 
+void process_file(int tindex, std::string filenameI1, String filenameR1,
+                  String filenameR2,  String read_structure,
+                  const WhiteListData* white_list_data,
+                  SAM_RECORD_BINS* samrecord_data)
+{
+  /// setting the shortest sequence allowed to be read
+  FastQFile fastQFileI1(4, 4);
+  FastQFile fastQFileR1(4, 4);
+  FastQFile fastQFileR2(4, 4);
+
+  // open the I1 file
+  bool has_I1_file_list = true;
+  if (!filenameI1.empty())
+  {
+    if (fastQFileI1.openFile(String(filenameI1.c_str()), BaseAsciiMap::UNKNOWN) !=
+        FastQStatus::FASTQ_SUCCESS)
+    {
+      std::cerr << "Failed to open file: " <<  filenameI1.c_str();
+      abort();
+    }
+  }
+  else
+    has_I1_file_list = false;
+
+  // open the R1 file
+  if (fastQFileR1.openFile(filenameR1, BaseAsciiMap::UNKNOWN) !=
+      FastQStatus::FASTQ_SUCCESS)
+  {
+    std::cerr << "Failed to open file: " <<  filenameR1.c_str();
+    abort();
+  }
+
+  // open the R2 file
+  if (fastQFileR2.openFile(filenameR2, BaseAsciiMap::UNKNOWN) !=
+      FastQStatus::FASTQ_SUCCESS)
+  {
+    std::cerr << "Failed to open file: " <<  filenameR2.c_str();
+    abort();
+  }
+
+  // point to the array of records already allocated for this reader
+  SamRecord* samRecord  = samrecord_data->samrecords[tindex];
+
+  // Keep reading the file until there are no more fastq sequences to process.
+  int i = 0;
+  int n_barcode_errors = 0;
+  int n_barcode_corrected = 0;
+  int n_barcode_correct = 0;
+  int r = 0;
+  printf("Opening the thread in %d\n", tindex);
+
+  while (fastQFileR1.keepReadingFile())
+  {
+    if ((!has_I1_file_list ||
+         (
+           has_I1_file_list &&
+           fastQFileI1.readFastQSequence() == FastQStatus::FASTQ_SUCCESS
+         )
+        ) &&
+        fastQFileR1.readFastQSequence() == FastQStatus::FASTQ_SUCCESS &&
+        fastQFileR2.readFastQSequence() == FastQStatus::FASTQ_SUCCESS)
+    {
+      i = i + 1;
+
+      // prepare the rth samrecord with the sequence, sequence quality
+      SamRecord* samrec = samRecord + r;
+      // barcode and UMI and their quality sequences
+      fillSamRecordWithReadStructure(samrec, fastQFileI1, fastQFileR1, fastQFileR2,
+                                     std::string(read_structure.c_str()), has_I1_file_list);
+
+      // extract the raw barcode and UMI
+      std::string a = std::string(fastQFileR1.myRawSequence.c_str());
+      std::string barcode = std::string(samrec->getString("CR").c_str());
+
+      // bucket barcode is used to pick the target bam file
+      // This is done because in the case of incorrigible barcodes
+      // we need a mechanism to uniformly distribute the alignments
+      // so that no bam is oversized to putting all such barcode less
+      // sequences into one particular. Incorregible barcodes are simply
+      // added withouth the CB tag
+      int32_t bucket =  getBucketIndex(barcode, samrec, white_list_data,
+                                       samrecord_data, &n_barcode_corrected,
+                                       &n_barcode_correct, &n_barcode_errors);
+
+      samrecord_data->num_records[tindex]++;
+      // store the index of the record in the right vector that is done
+      // to serve as a bucket B to hold the indices of samrecords that are
+      // going to bamfile B
+      samrecord_data->file_index[tindex][bucket].push_back(r);
+
+      samrecord_data->num_records[tindex]++;
+      // write a block of samrecords
+      r = r + 1;
+
+      // Once kSamRecordBufferSize samrecords are read, or there
+      // is no more sequence to be read from the file then it is time to
+      // signal the writer threads to clear the buffer to the bam files
+      // only one reader should be successfull in doing so.
+
+      // However, if a block of data is not read or end of the FASTQ file is
+      // seen then continue reading the FASTQ files and keep creating the
+      // sam records in its buffer. This is the same behavior across all
+      // reader threads
+      if (r == kSamRecordBufferSize || !fastQFileR1.keepReadingFile())
+      {
+        submit_block_tobe_written(samrecord_data, tindex);
+
+        // start reading a new block of FASTQ sequences
+        r = 0;
+      }
+      if (i % 10000000 == 0)
+      {
+        printf("%d\n", i);
+        std::string a = std::string(fastQFileR1.myRawSequence.c_str());
+        printf("%s\n", fastQFileR1.mySequenceIdLine.c_str());
+        printf("%s\n", fastQFileR2.mySequenceIdLine.c_str());
+      }
+    }  //  if successful read of a sequence
+  }
+
+  // Finished processing all of the sequences in the file.
+  // Close the input files.
+  if (has_I1_file_list)
+    fastQFileI1.closeFile();
+  fastQFileR1.closeFile();
+  fastQFileR2.closeFile();
+  printf("Total barcodes:%d\n correct:%d\ncorrected:%d\nuncorrectible"
+         ":%d\nuncorrected:%lf\n",
+         i, n_barcode_correct, n_barcode_corrected, n_barcode_errors,
+         n_barcode_errors/static_cast<double>(i) *100);
+}
+
 /** @copydoc process_inputs */
 void process_inputs(InputOptionsFastqReadStructure const& options,
                     const WhiteListData* white_list_data)
@@ -317,13 +449,14 @@ void process_inputs(InputOptionsFastqReadStructure const& options,
   delete [] samrecord_data->num_records;
 }
 
-std::vector<std::pair<char, int>> parseReadStructure(std::string read_structure)
+// TODO actually string_view
+std::vector<std::pair<char, int>> parseReadStructure(std::string const& read_structure)
 {
   std::vector<std::pair<char, int>> ret;
-  int next_ind = 0;
+  size_t next_ind = 0;
   while (next_ind < read_structure.size())
   {
-    int type_ind = read_structure.find_first_not_of("0123456789", next_ind);
+    size_t type_ind = read_structure.find_first_not_of("0123456789", next_ind);
     assert(type_ind != std::string::npos);
     char type = read_structure[type_ind];
     int len = std::stoi(read_structure.substr(next_ind, type_ind - next_ind));
@@ -346,7 +479,7 @@ std::vector<std::pair<char, int>> parseReadStructure(std::string read_structure)
 */
 void fillSamRecordWithReadStructure(SamRecord* samRecord, FastQFile& fastQFileI1,
                                     FastQFile& fastQFileR1, FastQFile& fastQFileR2,
-                                    std::string read_structure,
+                                    std::string const& read_structure,
                                     bool has_I1_file_list)
 {
   // check the sequence names matching
@@ -499,138 +632,6 @@ void submit_block_tobe_written(SAM_RECORD_BINS* samrecord_data, int tindex)
 
   // release the mutex, so that other readers might want to write
   mtx.unlock();
-}
-
-void process_file(int tindex, std::string filenameI1, String filenameR1,
-                  String filenameR2,  String read_structure,
-                  const WhiteListData* white_list_data,
-                  SAM_RECORD_BINS* samrecord_data)
-{
-  /// setting the shortest sequence allowed to be read
-  FastQFile fastQFileI1(4, 4);
-  FastQFile fastQFileR1(4, 4);
-  FastQFile fastQFileR2(4, 4);
-
-  // open the I1 file
-  bool has_I1_file_list = true;
-  if (!filenameI1.empty())
-  {
-    if (fastQFileI1.openFile(String(filenameI1.c_str()), BaseAsciiMap::UNKNOWN) !=
-        FastQStatus::FASTQ_SUCCESS)
-    {
-      std::cerr << "Failed to open file: " <<  filenameI1.c_str();
-      abort();
-    }
-  }
-  else
-    has_I1_file_list = false;
-
-  // open the R1 file
-  if (fastQFileR1.openFile(filenameR1, BaseAsciiMap::UNKNOWN) !=
-      FastQStatus::FASTQ_SUCCESS)
-  {
-    std::cerr << "Failed to open file: " <<  filenameR1.c_str();
-    abort();
-  }
-
-  // open the R2 file
-  if (fastQFileR2.openFile(filenameR2, BaseAsciiMap::UNKNOWN) !=
-      FastQStatus::FASTQ_SUCCESS)
-  {
-    std::cerr << "Failed to open file: " <<  filenameR2.c_str();
-    abort();
-  }
-
-  // point to the array of records already allocated for this reader
-  SamRecord* samRecord  = samrecord_data->samrecords[tindex];
-
-  // Keep reading the file until there are no more fastq sequences to process.
-  int i = 0;
-  int n_barcode_errors = 0;
-  int n_barcode_corrected = 0;
-  int n_barcode_correct = 0;
-  int r = 0;
-  printf("Opening the thread in %d\n", tindex);
-
-  while (fastQFileR1.keepReadingFile())
-  {
-    if ((!has_I1_file_list ||
-         (
-           has_I1_file_list &&
-           fastQFileI1.readFastQSequence() == FastQStatus::FASTQ_SUCCESS
-         )
-        ) &&
-        fastQFileR1.readFastQSequence() == FastQStatus::FASTQ_SUCCESS &&
-        fastQFileR2.readFastQSequence() == FastQStatus::FASTQ_SUCCESS)
-    {
-      i = i + 1;
-
-      // prepare the rth samrecord with the sequence, sequence quality
-      SamRecord* samrec = samRecord + r;
-      // barcode and UMI and their quality sequences
-      fillSamRecordWithReadStructure(samrec, fastQFileI1, fastQFileR1, fastQFileR2,
-                                     std::string(read_structure.c_str()), has_I1_file_list);
-
-      // extract the raw barcode and UMI
-      std::string a = std::string(fastQFileR1.myRawSequence.c_str());
-      std::string barcode = std::string(samrec->getString("CR").c_str());
-
-      // bucket barcode is used to pick the target bam file
-      // This is done because in the case of incorrigible barcodes
-      // we need a mechanism to uniformly distribute the alignments
-      // so that no bam is oversized to putting all such barcode less
-      // sequences into one particular. Incorregible barcodes are simply
-      // added withouth the CB tag
-      int32_t bucket =  getBucketIndex(barcode, samrec, white_list_data,
-                                       samrecord_data, &n_barcode_corrected,
-                                       &n_barcode_correct, &n_barcode_errors);
-
-      samrecord_data->num_records[tindex]++;
-      // store the index of the record in the right vector that is done
-      // to serve as a bucket B to hold the indices of samrecords that are
-      // going to bamfile B
-      samrecord_data->file_index[tindex][bucket].push_back(r);
-
-      samrecord_data->num_records[tindex]++;
-      // write a block of samrecords
-      r = r + 1;
-
-      // Once kSamRecordBufferSize samrecords are read, or there
-      // is no more sequence to be read from the file then it is time to
-      // signal the writer threads to clear the buffer to the bam files
-      // only one reader should be successfull in doing so.
-
-      // However, if a block of data is not read or end of the FASTQ file is
-      // seen then continue reading the FASTQ files and keep creating the
-      // sam records in its buffer. This is the same behavior across all
-      // reader threads
-      if (r == kSamRecordBufferSize || !fastQFileR1.keepReadingFile())
-      {
-        submit_block_tobe_written(samrecord_data, tindex);
-
-        // start reading a new block of FASTQ sequences
-        r = 0;
-      }
-      if (i % 10000000 == 0)
-      {
-        printf("%d\n", i);
-        std::string a = std::string(fastQFileR1.myRawSequence.c_str());
-        printf("%s\n", fastQFileR1.mySequenceIdLine.c_str());
-        printf("%s\n", fastQFileR2.mySequenceIdLine.c_str());
-      }
-    }  //  if successful read of a sequence
-  }
-
-  // Finished processing all of the sequences in the file.
-  // Close the input files.
-  if (has_I1_file_list)
-    fastQFileI1.closeFile();
-  fastQFileR1.closeFile();
-  fastQFileR2.closeFile();
-  printf("Total barcodes:%d\n correct:%d\ncorrected:%d\nuncorrectible"
-         ":%d\nuncorrected:%lf\n",
-         i, n_barcode_correct, n_barcode_corrected, n_barcode_errors,
-         n_barcode_errors/static_cast<double>(i) *100);
 }
 
 /* Flag set by ‘--verbose’. */
