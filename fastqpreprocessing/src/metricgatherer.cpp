@@ -236,32 +236,17 @@ void Metrics::finalize(std::unordered_set<std::string>& mitochondrial_genes)
 
   n_fragments = _fragment_histogram.size();
 
-  try
-  {
+  reads_per_molecule = -1;   // float("nan")
+  if (n_molecules != 0)
     reads_per_molecule = n_reads / n_molecules;
-  }
-  catch (runtime_error& e)
-  {
-    reads_per_molecule = -1;   // float("nan")
-  }
 
-  try
-  {
+  reads_per_fragment = -1; //float("nan")
+  if (n_fragments != 0)
     reads_per_fragment = n_reads / n_fragments;
-  }
-  catch (runtime_error& e)
-  {
-    reads_per_fragment = -1; //float("nan")
-  }
 
-  try
-  {
+  fragments_per_molecule = -1; // float("nan")
+  if (n_molecules != 0)
     fragments_per_molecule = n_fragments / n_molecules;
-  }
-  catch (runtime_error& e)
-  {
-    fragments_per_molecule = -1; // float("nan")
-  }
 
   fragments_with_single_read_evidence = 0;
   for (auto const& [key, val] : _fragment_histogram)
