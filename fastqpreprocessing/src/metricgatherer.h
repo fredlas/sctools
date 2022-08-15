@@ -232,7 +232,7 @@ private:
 
 public:
   std::string getHeader() override;
-  void output_metrics_extra(ofstream& fmetric_out) override;
+  void output_metrics_extra(std::ofstream& fmetric_out) override;
   void parse_extra_fields(std::string const& first_tag,
                           std::string const& second_tag,
                           std::string const& third_tag,
@@ -266,7 +266,7 @@ public:
 
 public:
   std::string getHeader() override;
-  void output_metrics_extra(ofstream& fmetric_out) override;
+  void output_metrics_extra(std::ofstream& fmetric_out) override;
   void parse_extra_fields(std::string const& first_tag,
                           std::string const& second_tag,
                           std::string const& third_tag,
