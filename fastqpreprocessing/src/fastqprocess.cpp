@@ -137,33 +137,15 @@ void process_inputs(const InputOptionsFastqProcess& options,
 
 void fastq_writers(int windex, SAM_RECORD_BINS* samrecord_data)
 {
-  std::string outputfile;
-  char buf[MAX_FILE_LENGTH];
+  std::string r1_output_fname = "fastq_R1_" + std::to_string(windex) + ".fastq.gz";
+  ogzstream r1_out(r1_output_fname);
+  if (!r1_out)
+    crash("ERROR: Failed to open R1 fastq file " + r1_output_fname + " for writing");
 
-  // open to write the outputfile
-  // name of the output R1 fastq file
-  sprintf(buf, "fastq_R1_%d.fastq.gz", windex);
-  outputfile = buf;
-  //ofstream r1_out(outputfile.c_str(), ios::out);
-  ogzstream r1_out(outputfile.c_str());
-  //if (!r1_out.is_open()) {
-  if (!r1_out.good())
-  {
-    error_message("ERROR: Failed open R1 fastq file\n");
-    exit(1);
-  }
-
-  // name of the output R1 fastq file
-  sprintf(buf, "fastq_R2_%d.fastq.gz", windex);
-  outputfile = buf;
-  //ofstream r2_out(outputfile.c_str(), ios::out);
-  ogzstream r2_out(outputfile.c_str());
-  //if (!r2_out.is_open()) {
-  if (!r2_out.good())
-  {
-    error_message("ERROR: Failed open R2 fastq file\n");
-    exit(1);
-  }
+  std::string r2_output_fname = "fastq_R2_" + std::to_string(windex) + ".fastq.gz";
+  ogzstream r2_out(r2_output_fname);
+  if (!r2_out)
+    crash("ERROR: Failed to open R2 fastq file " + r2_output_fname + " for writing");
 
   // keep writing forever, until there is a flag to stop
   while (true)

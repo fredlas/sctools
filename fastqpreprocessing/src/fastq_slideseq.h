@@ -76,7 +76,7 @@ typedef struct SamRecordBins
  * @params white_list_data data-structure to store barcode correction
  *         map and vector of correct barcodes
 */
-void process_inputs(const INPUT_OPTIONS_FASTQ_READ_STRUCTURE& options,
+void process_inputs(const InputOptionsFastqReadStructure& options,
                     const WhiteListData* white_list_data);
 
 /**

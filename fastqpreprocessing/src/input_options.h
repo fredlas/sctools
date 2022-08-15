@@ -1,5 +1,5 @@
-#ifndef __INPUT_OPTIONS__
-#define __INPUT_OPTIONS__
+#ifndef __SCTOOLS_FASTQPREPROCESSING_INPUT_OPTIONS_H_
+#define __SCTOOLS_FASTQPREPROCESSING_INPUT_OPTIONS_H_
 /**
  *  @file   input_options.h
  *  @brief  Utility functions for input options processing
@@ -102,4 +102,4 @@ InputOptionsFastqReadStructure readOptionsFastqMetrics(int argc, char** argv);
 int64_t getNumBlocks(const InputOptionsFastqProcess& options);
 int64_t getNumBlocks(const InputOptionsFastqReadStructure& options);
 
-#endif
+#endif // __SCTOOLS_FASTQPREPROCESSING_INPUT_OPTIONS_H_
