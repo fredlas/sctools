@@ -13,9 +13,6 @@ extern sem_t semaphore;
 extern std::mutex mtx;
 extern std::set<unsigned int> busy_buffer, idle_buffer, threads_to_join;
 
-char*  error_sem_wait = "sem_wait: semaphore";
-char*  error_sem_post = "sem_post: semaphore";
-
 #define SEM_PRINT_VAL(X,Y)                               \
   ({                                                     \
      sem_getvalue(&X, &Y);                               \
@@ -29,13 +26,13 @@ char*  error_sem_post = "sem_post: semaphore";
 #define SEM_WAIT(X)                                      \
  ({                                                      \
      if (sem_wait(&X) == -1)                             \
-         crashWithPerror(error_sem_wait);                          \
+         crashWithPerror("sem_wait: semaphore");                          \
  })
 
 #define SEM_POST(X)                                      \
  ({                                                      \
      if (sem_post(&X) == -1)                             \
-        crashWithPerror(error_sem_wait);                           \
+        crashWithPerror("sem_post: semaphore");                           \
  })
 
 

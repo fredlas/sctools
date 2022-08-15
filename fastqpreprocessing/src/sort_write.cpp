@@ -1,5 +1,6 @@
 #include "sort_write.h"
 #include <sstream>
+#include <string>
 /**
  *  @file   sort_write.cpp
  *  @brief  functions for file processing
@@ -7,12 +8,13 @@
  *  @date   2021-08-11
  ***********************************************/
 
-extern std::vector<string> partial_files;
+extern std::vector<std::string> partial_files;
 extern std::mutex mtx;
 
 inline bool sortbyfirst(const std::pair<TRIPLET*, int>& a,
                         const std::pair<TRIPLET*, int>& b)
 {
+  using std::get;
   if ((*get<0>(*a.first)).compare(*get<0>(*b.first)) != 0)
     return ((*get<0>(*a.first)).compare(*get<0>(*b.first)) < 0);
   if ((*get<1>(*a.first)).compare(*get<1>(*b.first)) != 0)
@@ -22,7 +24,7 @@ inline bool sortbyfirst(const std::pair<TRIPLET*, int>& a,
 
 // Generates a random alphanumeric string (AZaz09) of a fixed length.
 constexpr int kStringLen = 40;
-std::string randomString(size_t length)
+std::string randomString()
 {
   auto randchar = []() -> char
   {
@@ -54,7 +56,7 @@ void write_out_partial_txt_file(const std::vector<TAGTUPLE>& tuple_records,
 
   std::sort(index_pairs.begin(), index_pairs.end(), sortbyfirst);
 
-  std::stringstream str(stringstream::out|stringstream::binary);
+  std::stringstream str(std::stringstream::out|std::stringstream::binary);
 
   for (auto it=index_pairs.begin(); it != index_pairs.end(); it++, k++)
   {

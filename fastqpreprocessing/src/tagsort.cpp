@@ -292,7 +292,7 @@ void mergeSortedPartialFiles(const InputOptionsTagsort& options)
   int num_alignments = 0;
   int i, j;
 
-  Metrics* metric_gatherer;
+  Metrics* metric_gatherer = nullptr;
   MetricType metric_type_enum;
   if (metric_type.compare("cell")==0)
   {
