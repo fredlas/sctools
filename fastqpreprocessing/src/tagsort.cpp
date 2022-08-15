@@ -293,7 +293,7 @@ void mergeSortedPartialFiles(const InputOptionsTagsort& options)
   int i, j;
 
   Metrics* metric_gatherer = nullptr;
-  MetricType metric_type_enum;
+  MetricType metric_type_enum = MetricType::Cell;
   if (metric_type.compare("cell")==0)
   {
     metric_gatherer = new CellMetrics;
