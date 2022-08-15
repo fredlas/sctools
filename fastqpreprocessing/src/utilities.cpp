@@ -7,9 +7,7 @@
 
 #include "utilities.h"
 
-using namespace std;
 namespace fs = std::experimental::filesystem;
-
 
 /** @copydoc readWhiteList */
 std::unique_ptr<WhiteListData> readWhiteList(const string& white_list_file)

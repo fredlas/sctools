@@ -84,8 +84,6 @@ inline char* get_Ztag_or_default(bam1_t* aln, const char* tagname, char* default
   return  tag_value;
 }
 
-using namespace std;
-
 void process_alignments(InputOptionsTagsort& options, bam1_t** aln, bam_hdr_t* bamHdr, unsigned int buf_no, unsigned int n)
 {
   int threshold = THRESHOLD; //qual score threshold

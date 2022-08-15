@@ -171,12 +171,12 @@ public:
   //  get the headers
   virtual std::string getHeader() = 0;
 
-  void parse_line(std::string& str, ofstream& fmetric_out,
+  void parse_line(std::string& str, std::ofstream& fmetric_out,
                   std::unordered_set<std::string>& mitochondrial_genes,
                   MetricType metric_type);
 
-  void output_metrics(ofstream& fmetric_out);
-  virtual void output_metrics_extra(ofstream& fmetric_out) = 0;
+  void output_metrics(std::ofstream& fmetric_out);
+  virtual void output_metrics_extra(std::ofstream& fmetric_out) = 0;
   virtual void parse_extra_fields(const std::string& first_tag,
                                   const std::string& second_tag,
                                   const std::string& third_tag,

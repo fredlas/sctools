@@ -13,6 +13,7 @@
 #include <queue>
 #include <regex>
 #include <string>
+#include <sstream>
 
 #include "htslib_tagsort.h"
 #include "metricgatherer.h"
@@ -435,18 +436,17 @@ int main(int argc, char** argv)
 
   /* now merge the sorted files to create one giant sorted file by using
     a head to compare the values based on the tags used  */
-  std::cout << "Merging " <<  partial_files.size() << " sorted files!"<< std::endl;
+  std::cout << "Merging " << partial_files.size() << " sorted files!"<< std::endl;
 
   mergeSortedPartialFiles(options);
 
   // we no longer need the partial files
   for (unsigned int i=0; i < partial_files.size(); i++)
     if (remove(partial_files[i].c_str()) != 0)
-      std::cerr << string("Error deleting file") << partial_files[i] << std::endl;
+      std::cerr << "Warning: error deleting file " << partial_files[i] << std::endl;
 
   partial_files.clear();
   std::cout << "Aligments " <<  filling_counter << " loaded to buffer " << std::endl;
 
   return 0;
 }
-
