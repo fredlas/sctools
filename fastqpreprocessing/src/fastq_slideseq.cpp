@@ -246,6 +246,23 @@ void fastq_writers(int windex, SAM_RECORD_BINS* samrecord_data)
   r2_out.close();
 }
 
+// TODO actually string_view
+std::vector<std::pair<char, int>> parseReadStructure(std::string const& read_structure)
+{
+  std::vector<std::pair<char, int>> ret;
+  size_t next_ind = 0;
+  while (next_ind < read_structure.size())
+  {
+    size_t type_ind = read_structure.find_first_not_of("0123456789", next_ind);
+    assert(type_ind != std::string::npos);
+    char type = read_structure[type_ind];
+    int len = std::stoi(read_structure.substr(next_ind, type_ind - next_ind));
+    ret.emplace_back(type, len);
+    next_ind = type_ind + 1;
+  }
+  return ret;
+}
+
 /**
  * @brief fillSamRecord fill a SamRecord with the sequence and TAGs data
  *
@@ -316,6 +333,103 @@ void fillSamRecordWithReadStructure(SamRecord* samRecord, FastQFile& fastQFileI1
     samRecord->addTag("SR", 'Z', indexseq.c_str());
     samRecord->addTag("SY", 'Z', indexSeqQual.c_str());
   }
+}
+
+/**
+   @brief getBukcetIndex computes the index for the bucket (of bam file)
+ *    for a barcode and also add the correct barcode to the SamRecord
+ *
+ * @param barcode the barcode for which a bucket is computed
+ * @param samRecord  the partially filled samrecord to add the corrected barcode
+ * @param white_list_data the white list data for barcode correction
+ * @param samrecord_data shared data for the various readers
+ * @param n_barcode_corrected a variable keeping track of the number of barcodes corrected
+ * @param n_barcode_correct a the number of barcodes so far are already correct
+ * @param n_barcode_errrosv keeping track of the number of barcodes that are incorrectible
+ *
+ * @return the bucket number where the current SamRecord should go to
+*/
+int32_t getBucketIndex(std::string const& barcode, SamRecord* samRecord,
+                       const WhiteListData* white_list_data, SAM_RECORD_BINS* samrecord_data,
+                       int* n_barcode_corrected, int* n_barcode_correct, int* n_barcode_errors)
+{
+
+  std::string correct_barcode;
+  // bucket barcode is used to pick the target bam file
+  // This is done because in the case of incorrigible barcodes
+  // we need a mechanism to uniformly distribute the alignments
+  // so that no bam is oversized to putting all such barcode less
+  // sequences into one particular. Incorregible barcodes are simply
+  // added withouth the CB tag
+  std::string bucket_barcode;
+  if (white_list_data->mutations.find(barcode) != white_list_data->mutations.end())
+  {
+    if (white_list_data->mutations.at(barcode) == -1) // -1 means raw barcode is correct
+    {
+      correct_barcode = barcode;
+      *n_barcode_correct += 1;
+    }
+    else
+    {
+      // it is a 1-mutation of some whitelist barcode so get the
+      // barcode by indexing into the vector of whitelist barcodes
+      correct_barcode = white_list_data->barcodes.at(white_list_data->mutations.at(barcode));
+      *n_barcode_corrected += 1;
+    }
+    // is used for computing the file index
+    bucket_barcode = correct_barcode;
+
+    // corrected barcode should be added to the samrecord
+    samRecord->addTag("CB", 'Z', correct_barcode.c_str());
+  }
+  else     // not possible to correct the raw barcode
+  {
+    *n_barcode_errors += 1;
+    bucket_barcode = barcode;
+  }
+  // destination bam file index computed based on the bucket_barcode
+  int32_t bucket = std::hash<std::string> {}(bucket_barcode.c_str()) %
+                   samrecord_data->num_files;
+
+  return bucket;
+}
+
+/**
+ * @brief submit_block_tobe_written this function is for a reader to send
+ *    signal to the writer to empty the current list of SamRecords that are
+ *    ready to be written out
+ *
+ * @param samrecord_data  the samrecord data
+ * @param tindex the index of the thread
+*/
+void submit_block_tobe_written(SAM_RECORD_BINS* samrecord_data, int tindex)
+{
+  mtx.lock();
+
+  // it sets itself as the active thread who wants the
+  // readers to clear the data
+  samrecord_data->active_thread_num = tindex;
+
+  // send a signal to every writer thread, i.e., write out data
+  // data to any file where the samheader should be written to
+  for (int32_t j = 0; j < samrecord_data->num_files; j++)
+    if (sem_post(&semaphores[j]) == -1)
+      crashWithPerror("sem_post: semaphores");
+
+  // there is where I wait while the writers are writing
+  for (int32_t j = 0; j < samrecord_data->num_files; j++)
+    if (sem_wait(&semaphores_workers[j]) == -1)
+      crashWithPerror("sem_wait: semaphores_workers");
+
+  // they are done writing
+  for (int j = 0; j < samrecord_data->num_files; j++)
+    samrecord_data->file_index[tindex][j].clear();
+
+  // not records to write in the current
+  samrecord_data->num_records[tindex] = 0;
+
+  // release the mutex, so that other readers might want to write
+  mtx.unlock();
 }
 
 void process_file(int tindex, std::string filenameI1, String filenameR1,
@@ -519,120 +633,6 @@ void process_inputs(InputOptionsFastqReadStructure const& options,
 
   // delete the records
   delete [] samrecord_data->num_records;
-}
-
-// TODO actually string_view
-std::vector<std::pair<char, int>> parseReadStructure(std::string const& read_structure)
-{
-  std::vector<std::pair<char, int>> ret;
-  size_t next_ind = 0;
-  while (next_ind < read_structure.size())
-  {
-    size_t type_ind = read_structure.find_first_not_of("0123456789", next_ind);
-    assert(type_ind != std::string::npos);
-    char type = read_structure[type_ind];
-    int len = std::stoi(read_structure.substr(next_ind, type_ind - next_ind));
-    ret.emplace_back(type, len);
-    next_ind = type_ind + 1;
-  }
-  return ret;
-}
-
-/**
-   @brief getBukcetIndex computes the index for the bucket (of bam file)
- *    for a barcode and also add the correct barcode to the SamRecord
- *
- * @param barcode the barcode for which a bucket is computed
- * @param samRecord  the partially filled samrecord to add the corrected barcode
- * @param white_list_data the white list data for barcode correction
- * @param samrecord_data shared data for the various readers
- * @param n_barcode_corrected a variable keeping track of the number of barcodes corrected
- * @param n_barcode_correct a the number of barcodes so far are already correct
- * @param n_barcode_errrosv keeping track of the number of barcodes that are incorrectible
- *
- * @return the bucket number where the current SamRecord should go to
-*/
-int32_t getBucketIndex(std::string const& barcode, SamRecord* samRecord,
-                       const WhiteListData* white_list_data, SAM_RECORD_BINS* samrecord_data,
-                       int* n_barcode_corrected, int* n_barcode_correct, int* n_barcode_errors)
-{
-
-  std::string correct_barcode;
-  // bucket barcode is used to pick the target bam file
-  // This is done because in the case of incorrigible barcodes
-  // we need a mechanism to uniformly distribute the alignments
-  // so that no bam is oversized to putting all such barcode less
-  // sequences into one particular. Incorregible barcodes are simply
-  // added withouth the CB tag
-  std::string bucket_barcode;
-  if (white_list_data->mutations.find(barcode) != white_list_data->mutations.end())
-  {
-    if (white_list_data->mutations.at(barcode) == -1) // -1 means raw barcode is correct
-    {
-      correct_barcode = barcode;
-      *n_barcode_correct += 1;
-    }
-    else
-    {
-      // it is a 1-mutation of some whitelist barcode so get the
-      // barcode by indexing into the vector of whitelist barcodes
-      correct_barcode = white_list_data->barcodes.at(white_list_data->mutations.at(barcode));
-      *n_barcode_corrected += 1;
-    }
-    // is used for computing the file index
-    bucket_barcode = correct_barcode;
-
-    // corrected barcode should be added to the samrecord
-    samRecord->addTag("CB", 'Z', correct_barcode.c_str());
-  }
-  else     // not possible to correct the raw barcode
-  {
-    *n_barcode_errors += 1;
-    bucket_barcode = barcode;
-  }
-  // destination bam file index computed based on the bucket_barcode
-  int32_t bucket = std::hash<std::string> {}(bucket_barcode.c_str()) %
-                   samrecord_data->num_files;
-
-  return bucket;
-}
-
-/**
- * @brief submit_block_tobe_written this function is for a reader to send
- *    signal to the writer to empty the current list of SamRecords that are
- *    ready to be written out
- *
- * @param samrecord_data  the samrecord data
- * @param tindex the index of the thread
-*/
-void submit_block_tobe_written(SAM_RECORD_BINS* samrecord_data, int tindex)
-{
-  mtx.lock();
-
-  // it sets itself as the active thread who wants the
-  // readers to clear the data
-  samrecord_data->active_thread_num = tindex;
-
-  // send a signal to every writer thread, i.e., write out data
-  // data to any file where the samheader should be written to
-  for (int32_t j = 0; j < samrecord_data->num_files; j++)
-    if (sem_post(&semaphores[j]) == -1)
-      crashWithPerror("sem_post: semaphores");
-
-  // there is where I wait while the writers are writing
-  for (int32_t j = 0; j < samrecord_data->num_files; j++)
-    if (sem_wait(&semaphores_workers[j]) == -1)
-      crashWithPerror("sem_wait: semaphores_workers");
-
-  // they are done writing
-  for (int j = 0; j < samrecord_data->num_files; j++)
-    samrecord_data->file_index[tindex][j].clear();
-
-  // not records to write in the current
-  samrecord_data->num_records[tindex] = 0;
-
-  // release the mutex, so that other readers might want to write
-  mtx.unlock();
 }
 
 /* Flag set by ‘--verbose’. */
