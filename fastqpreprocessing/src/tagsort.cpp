@@ -29,41 +29,41 @@ struct Context
   std::vector<int> data_size;
   std::vector<int> ptrs;
   std::vector<bool> isempty;
-  int i = -1;
+  int index_ = -1;
   int num_active_files = 0;
   const int num_parts_;
 
   Context(unsigned int num_parts) : num_parts_(num_parts)
   {
     // set the file offsets to 0
-    for (int i=0; i < this->num_parts_; i++)
-      this->file_offset.push_back(0);
+    for (int i=0; i < num_parts_; i++)
+      file_offset.push_back(0);
 
     // set the isempty for each file to false
-    for (int i=0; i < this->num_parts_; i++)
-      this->isempty.push_back(false);
+    for (int i=0; i < num_parts_; i++)
+      isempty.push_back(false);
 
     // set a vector of vectors of data for each file
-    for (int i=0; i < this->num_parts_; i++)
-      this->data.push_back(std::vector<std::string>());
+    for (int i=0; i < num_parts_; i++)
+      data.push_back(std::vector<std::string>());
 
     // set the data_size of the buffer for each file to 0
-    for (int i=0; i < this->num_parts_; i++)
-      this->data_size.push_back(0);
+    for (int i=0; i < num_parts_; i++)
+      data_size.push_back(0);
 
     // set the pointer to f each buffer to kDataBufferSize
-    for (int i=0; i < this->num_parts_; i++)
-      this->ptrs.push_back(kDataBufferSize);
+    for (int i=0; i < num_parts_; i++)
+      ptrs.push_back(kDataBufferSize);
   }
 
   void print_status()
   {
     std::cout << "Contx status " << std::endl;
-    for (int i=0; i < this->num_parts_; i++)
+    for (int i=0; i < num_parts_; i++)
     {
-      this->i = i;
-      std::cout << "\t" << this->i << "\t" << this->data[this->i].size() << "\t"
-                << this->data_size[this->i] << "\t"  << this->ptrs[this->i] << std::endl;
+      index_ = i;
+      std::cout << "\t" << index_ << "\t" << data[index_].size() << "\t"
+                << data_size[index_] << "\t" << ptrs[index_] << std::endl;
     }
   }
 
@@ -195,37 +195,37 @@ std::unordered_set<std::string> get_mitochondrial_gene_names(std::string const& 
 */
 void fill_buffer(Context& contx)
 {
-  contx.data[contx.i].clear();
+  contx.data[contx.index_].clear();
   int k = 0;
 
-  std::ifstream input_file(partial_files[contx.i]);
+  std::ifstream input_file(partial_files[contx.index_]);
   if (!input_file)
-    crash("ERROR failed to open the file " + partial_files[contx.i]);
+    crash("ERROR failed to open the file " + partial_files[contx.index_]);
 
-  input_file.seekg(contx.file_offset[contx.i]);
+  input_file.seekg(contx.file_offset[contx.index_]);
 
   // the order of the loop condition is iportant first make sure if you can accomodate then try to read,
   // otherwise it might create a read but never processed
   for (std::string line; k < kDataBufferSize && std::getline(input_file, line); k++)
   {
-    contx.data[contx.i].push_back(line);
+    contx.data[contx.index_].push_back(line);
     filling_counter += 1;
   }
-  assert(contx.data[contx.i].size() <= kDataBufferSize);
+  assert(contx.data[contx.index_].size() <= kDataBufferSize);
 
-  contx.file_offset[contx.i] = input_file.tellg();
+  contx.file_offset[contx.index_] = input_file.tellg();
 
-  contx.data_size[contx.i] = contx.data[contx.i].size();
+  contx.data_size[contx.index_] = contx.data[contx.index_].size();
 
-  if (contx.data_size[contx.i] != 0)
+  if (contx.data_size[contx.index_] != 0)
   {
-    contx.ptrs[contx.i] = 0;
-    contx.isempty[contx.i] = false;
+    contx.ptrs[contx.index_] = 0;
+    contx.isempty[contx.index_] = false;
   }
   else
   {
-    contx.ptrs[contx.i] = kDataBufferSize;
-    contx.isempty[contx.i] = true;
+    contx.ptrs[contx.index_] = kDataBufferSize;
+    contx.isempty[contx.index_] = true;
   }
 
 #ifdef DEBUG
@@ -256,7 +256,7 @@ void mergeSortedPartialFiles(InputOptionsTagsort const& options)
 
   for (int i=0; i < contx.num_parts_; i++)
   {
-    contx.i = i;
+    contx.index_ = i;
     fill_buffer(contx);
   }
 
@@ -267,7 +267,7 @@ void mergeSortedPartialFiles(InputOptionsTagsort const& options)
   contx.num_active_files = 0;
   for (int i=0; i< contx.num_parts_; i++)
   {
-    contx.i = i;
+    contx.index_ = i;
     if (contx.ptrs[i] != kDataBufferSize)
     {
       std::sregex_token_iterator iter(contx.data[i][contx.ptrs[i]].begin(),
@@ -363,7 +363,7 @@ void mergeSortedPartialFiles(InputOptionsTagsort const& options)
     // if ismpty is true means the file has been fully read
     if (!contx.isempty[i] && contx.ptrs[i] == contx.data_size[i])
     {
-      contx.i = i;
+      contx.index_ = i;
       fill_buffer(contx);
     }
 
