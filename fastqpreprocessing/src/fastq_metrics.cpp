@@ -208,7 +208,7 @@ void process_inputs(InputOptionsFastqReadStructure const& options,
                                               umi_length, CB_length);
 }
 
-void writeCountsFile(std::unordered_map<string,int> counts, std::string filename)
+void writeCountsFile(std::unordered_map<std::string, int> counts, std::string filename)
 {
   std::ofstream out(filename, std::ofstream::out);
   std::vector<std::pair<std::string,int>> sorted_counts;
