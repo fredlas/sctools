@@ -106,6 +106,7 @@ INPUT_OPTIONS_TAGSORT readOptionsTagsort(int argc, char** argv)
     {"umi-tag",                    required_argument, 0, 'U'},
     {"gene-tag",                   required_argument, 0, 'G'},
     {"metric-type",                required_argument, 0, 'K'},
+    {"mitochondrial-gene-names-filename", required_argument, 0, 'g'},
     {0, 0, 0, 0}
   };
 
@@ -192,6 +193,9 @@ INPUT_OPTIONS_TAGSORT readOptionsTagsort(int argc, char** argv)
       break;
     case 'K':
       options.metric_type = string(optarg);
+      break;
+    case 'g':
+      options.mitochondrial_gene_names_filename = string(optarg);
       break;
     case '?':
     case 'h':
