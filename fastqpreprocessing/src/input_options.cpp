@@ -170,7 +170,7 @@ INPUT_OPTIONS_TAGSORT readOptionsTagsort(int argc, char** argv)
       options.metric_output_file = string(optarg);
       break;
     case 'p':
-      options.alignments_per_thread = atoi(optarg);
+      options.alignments_per_batch = atoi(optarg);
       break;
     case 'T':
       options.nthreads = atoi(optarg);
@@ -254,7 +254,7 @@ INPUT_OPTIONS_TAGSORT readOptionsTagsort(int argc, char** argv)
     crash("ERROR:  Must have three distinct tags");
 
   // The size of a set of aligments for in-memory sorting must be positive
-  if (options.alignments_per_thread < 1000)
+  if (options.alignments_per_batch < 1000)
     crash("ERROR: The number of alignments per thread must be at least 1000");
 
   // The number of threads must be between 1 and kMaxTagsortThreads

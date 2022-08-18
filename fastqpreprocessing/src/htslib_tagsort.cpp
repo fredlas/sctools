@@ -24,35 +24,7 @@ constexpr int kThreshold = 30; // qual score threshold
 #include <stdlib.h>
 #include <unordered_map>
 #include <memory>
-#include <semaphore.h>
 #include <set>
-
-sem_t g_tagsort_semaphore;
-std::mutex g_mtx;
-std::set<unsigned int> g_threads_to_join;
-
-#define SEM_PRINT_VAL(X,Y)                               \
-  ({                                                     \
-     sem_getvalue(&X, &Y);                               \
-     std::cout << "SEM_VALUE " << Y << std::endl;        \
-  })                                                     \
-
-#define SEM_INIT(X, n)  (sem_init(&X, 0, n) )
-
-#define SEM_DESTROY(X)  (sem_destroy(&X) )
-
-#define SEM_WAIT(X)                                      \
- ({                                                      \
-     if (sem_wait(&X) == -1)                             \
-         crashWithPerror("sem_wait: g_tagsort_semaphore");   \
- })
-
-#define SEM_POST(X)                                      \
- ({                                                      \
-     if (sem_post(&X) == -1)                             \
-        crashWithPerror("sem_post: g_tagsort_semaphore");    \
- })
-
 
 extern "C" {
   bam_hdr_t* sam_hdr_read(samFile*);   //read header
@@ -68,7 +40,7 @@ inline int get_itag_or_default(bam1_t* aln, const char* tagname, int default_val
 {
   uint8_t* p;
   int tag_value = -1;
-  if ((p = bam_aux_get(aln, tagname)) == NULL)
+  if ((p = bam_aux_get(aln, tagname)) == nullptr)
     tag_value = default_value;
   else
     tag_value = bam_aux2i(p);
@@ -83,8 +55,8 @@ inline int get_itag_or_default(bam1_t* aln, const char* tagname, int default_val
 inline char* get_Ztag_or_default(bam1_t* aln, const char* tagname, char* default_value)
 {
   uint8_t* p;
-  char* tag_value = NULL;
-  if ((p = bam_aux_get(aln, tagname)) == NULL)
+  char* tag_value = nullptr;
+  if ((p = bam_aux_get(aln, tagname)) == nullptr)
     tag_value = default_value;
   else
   {
@@ -116,7 +88,7 @@ using TAGTUPLE = std::tuple<
     >;
 
 void parseOneAlignment(std::vector<TAGTUPLE>* tuple_records, bam1_t* aln,
-                       INPUT_OPTIONS_TAGSORT& options, const bam_hdr_t* bamHdr,
+                       INPUT_OPTIONS_TAGSORT& options, const bam_hdr_t* bam_hdr_,
                        std::unordered_map<std::string, std::string*>& string_map)
 {
   // "consts" that the library doesn't allow to be const.
@@ -177,7 +149,7 @@ void parseOneAlignment(std::vector<TAGTUPLE>* tuple_records, bam1_t* aln,
 
   int nh_num = get_itag_or_default(aln, "NH", -1);
 
-  char* chr = (aln->core.tid == -1) ? nochr : bamHdr->target_name[aln->core.tid];
+  const char* chr = (aln->core.tid == -1) ? nochr : bam_hdr_->target_name[aln->core.tid];
 
   uint32_t pos = aln->core.pos; // position.
   uint32_t isrev = bam_is_rev(aln) ? 1 : 0;   // is reverse stand
@@ -286,14 +258,13 @@ std::string randomString()
  * @param tuple_records: vector<TAGTUPLE> &, reference to a vector of TAGTUPLES
  * @return a string for the random file name
 */
-void write_out_partial_txt_file(std::vector<TAGTUPLE> const& tuple_records,
-                                std::string const& tmp_folder,
-                                std::vector<std::string>* partial_files)
+std::string write_out_partial_txt_file(std::vector<TAGTUPLE> const& tuple_records,
+                                       std::string const& tmp_folder)
 {
   using std::get;
 
-  std::string tempfile = tmp_folder + "/" + randomString() + ".txt";
-  std::ofstream outfile(tempfile);
+  std::string tempfile_filename = tmp_folder + "/" + randomString() + ".txt";
+  std::ofstream outfile(tempfile_filename);
 
   // Sort by triplet, maintaining each triplet's pre-sorted index...
   std::vector<std::pair<TRIPLET*, int>> index_pairs;
@@ -326,41 +297,135 @@ void write_out_partial_txt_file(std::vector<TAGTUPLE> const& tuple_records,
             << get<14>(tuple_records[record_index]) /* record[13] */ << "\n";
   }
 
-  outfile.close(); // TODO is closing specifically here relevant to the mutex?
-  g_mtx.lock();
-  partial_files->push_back(tempfile);
-  g_mtx.unlock();
+  return tempfile_filename;
 }
 
-unsigned int g_num_thread_deallocations = 0;
-
-void process_alignments(INPUT_OPTIONS_TAGSORT& options, bam1_t** alns,
-                        bam_hdr_t* bamHdr, unsigned int buf_no, unsigned int n,
-                        std::vector<std::string>* partial_files)
+// Manages worker threads' access to reading the input file. Any worker can take
+// any line from the file, but only one thread can be reading at a time. This
+// class lets them take turns: they call readAlignments() whenever they want
+// more data, and it blocks until they can have it.
+class AlignmentReader
 {
-  std::vector<TAGTUPLE> tuple_records;
-  // TODO this maps from a string to a heap-allocated copy of that string.
-  std::unordered_map<std::string, std::string*> string_map;
+public:
+  explicit AlignmentReader(INPUT_OPTIONS_TAGSORT options) : options_(options)
+  {
+    if ((sam_file_ptr_ = hts_open(options.bam_input.c_str(),"r")) == nullptr)
+      crash(options.bam_input + ": cannot open file.");
 
-  for (unsigned int i = 0; i < n; i++)
-    parseOneAlignment(&tuple_records, alns[i], options, bamHdr, string_map);
+    bam_hdr_ = sam_hdr_read(sam_file_ptr_); //read header
 
-  write_out_partial_txt_file(tuple_records, options.temp_folder, partial_files);
+    allocateAlignmentBuffers();
+  }
 
-  // delete the triplet
-  for (auto it=tuple_records.begin(); it != tuple_records.end(); ++it)
-    delete std::get<0>(*it);
+  ~AlignmentReader()
+  {
+    for (unsigned int i = 0; i < options_.nthreads; i++)
+    {
+      for (unsigned int k = 0; k < options_.alignments_per_batch; k++)
+        bam_destroy1(aln_arr_[i][k]);
+      free(aln_arr_[i]);
+    }
+    free(aln_arr_);
+    sam_hdr_destroy(bam_hdr_);
+    hts_close(sam_file_ptr_);
+  }
 
-  //  free the memory for the strings
-  for (auto it=string_map.begin(); it != string_map.end(); ++it)
-    delete it->second;
+  // Blocks until it's this thread's turn to read, then reads a batch of alignments.
+  // Returns a pointer to the alignment ptr array, and number of alignment ptrs in the array.
+  std::pair<bam1_t**, unsigned int> readAlignments(int thread_index)
+  {
+    const lock_guard<std::mutex> lock(g_mtx);
+    unsigned int cur_num_read = 0;
+    while (cur_num_read < options.alignments_per_batch)
+    {
+      if (sam_read1(sam_file_ptr_, bam_hdr_, aln_arr_[thread_index][cur_num_read]) == 0)
+        cur_num_read++;
+      else
+        break;
+    }
+    total_aligns_read_ += cur_num_read;
+    batches_read_++;
+    std::cout << "Finished reading batch number: " << batches_read_ << std::endl;
+    return std::make_pair(aln_arr_[thread_index], cur_num_read);
+  }
 
-  g_mtx.lock();
-  g_threads_to_join.insert(buf_no);
-  g_mtx.unlock();
+  void addToPartialFilenames(std::vector<std::string> names)
+  {
+    const lock_guard<std::mutex> lock(g_mtx);
+    for (std::string name : names)
+      partial_filenames_.push_back(name);
+  }
 
-  g_num_thread_deallocations += 1;
-  SEM_POST(g_tagsort_semaphore);
+  std::vector<std::string> partial_filenames() const { return partial_filenames_; }
+  bam_hdr_t* bam_hdr() const { return bam_hdr_; }
+  uint64_t total_aligns_read() const { return total_aligns_read_; }
+
+private:
+  void allocateAlignmentBuffers()
+  {
+    assert(options_.nthreads <= kMaxTagsortThreads);
+    std::string msg = "Now allocating alignment buffers. If the program crashes "
+                      "here, it probably ran out of memory...";
+    std::cout << msg << std::endl;
+    std::cerr << msg << std::endl;
+
+    aln_arr_ = (bam1_t***)malloc(sizeof(bam1_t**) * options_.nthreads);
+    for (unsigned int i = 0; i < options_.nthreads; i++)
+    {
+      aln_arr_[i] = (bam1_t**)malloc(sizeof(bam1_t*) * options_.alignments_per_batch);
+      for (unsigned int k = 0; k < options_.alignments_per_batch; k++)
+        aln_arr_[i][k] = bam_init1(); //initialize an alignment
+    }
+    std::string done_msg = "Successfully allocated alignment buffers.";
+    std::cout << done_msg << std::endl;
+    std::cerr << done_msg << std::endl;
+  }
+
+  std::mutex mutex_;
+  uint64_t total_aligns_read_ = 0;
+  uint64_t batches_read_ = 0;
+  INPUT_OPTIONS_TAGSORT options_;
+  samFile* sam_file_ptr_ = nullptr;
+  bam_hdr_t* bam_hdr_ = nullptr;
+  bam1_t*** aln_arr_ = nullptr;
+  std::vector<std::string> partial_filenames_;
+};
+
+void readProcessWriteAlignmentsLoopThread(int my_thread_index,
+                                          AlignmentReader* alignment_reader)
+{
+  std::vector<std::string> my_partial_filenames;
+  bam_hdr_t* bam_hdr = alignment_reader->bam_hdr();
+  while (true)
+  {
+    std::vector<TAGTUPLE> tuple_records;
+    // TODO this maps from a string to a heap-allocated copy of that string.
+    // NOTE memory managed by string_map is used in write_out_partial_txt_file().
+    std::unordered_map<std::string, std::string*> string_map;
+
+
+    // Read...
+    auto [aln_ptr_array, alns_length] = alignment_reader->readAlignments(my_thread_index);
+    if (alns_length == 0)
+      break;
+
+    // ...process...
+    for (unsigned int i = 0; i < alns_length; i++)
+      parseOneAlignment(&tuple_records, aln_ptr_array[i], options, bam_hdr, string_map);
+
+    // ...write.
+    my_partial_filenames.push_back(
+        write_out_partial_txt_file(tuple_records, options.temp_folder));
+
+
+    // delete the triplet
+    for (auto it=tuple_records.begin(); it != tuple_records.end(); ++it)
+      delete std::get<0>(*it);
+    //  free the memory for the strings
+    for (auto it=string_map.begin(); it != string_map.end(); ++it)
+      delete it->second;
+  }
+  alignment_reader->addToPartialFilenames(my_partial_filenames);
 }
 
 /**
@@ -376,129 +441,18 @@ void process_alignments(INPUT_OPTIONS_TAGSORT& options, bam1_t** alns,
 */
 std::vector<std::string> create_sorted_file_splits_htslib(INPUT_OPTIONS_TAGSORT& options)
 {
-  // size of individual chunks to sort in memory as an approx 20 mil alignments makes 1 GB bam
-  //open bam file
-  samFile* fp_in=0;
-  if ((fp_in = hts_open(options.bam_input.c_str(),"r"))==0)
-    crash(options.bam_input + ": cannot open file.");
-
-  bam_hdr_t* bamHdr = sam_hdr_read(fp_in); //read header
-  bam1_t*** aln_arr;
-
-  // allocated memory for the alignments for the various threads
-  if ((aln_arr = (bam1_t***)malloc(sizeof(bam1_t**)*options.nthreads))==NULL)
-    crash("ERROR Failed to allocate memory");
-
-  for (unsigned int i = 0; i < options.nthreads; i++)
-  {
-    if ((aln_arr[i] = (bam1_t**)malloc(sizeof(bam1_t*)*options.alignments_per_thread))==NULL)
-      crash("ERROR Failed to allocate memory for alignments");
-    for (unsigned int k = 0; k < options.alignments_per_thread; k++)
-      aln_arr[i][k]= bam_init1(); //initialize an alignment
-  }
-
   std::cout << "Running htslib" << std::endl;
+  AlignmentReader alignment_reader(options);
 
-  unsigned int batch = 0;
-  long int num_alignments =0;
-  std::string tags[3];
+  std::vector<std::thread> worker_threads;
+  for (int i = 0; i < options.nthreads; i++)
+    worker_threads.emplace_back(readProcessWriteAlignmentsLoopThread, i, &alignment_reader);
+  for (auto& worker_thread : worker_threads)
+    worker_thread.join();
 
-  std::thread thread_id[kMaxTagsortThreads];
+  std::cout << "Read " << alignment_reader.total_aligns_read() << " records in batches of "
+            << options.alignments_per_batch << std::endl;
 
-  std::set<unsigned int> busy_buffers, idle_buffers;
-  for (unsigned int j = 0; j < options.nthreads; j++)
-    idle_buffers.insert(j);
-
-  SEM_INIT(g_tagsort_semaphore, options.nthreads);
-  SEM_WAIT(g_tagsort_semaphore);
-
-  g_mtx.lock();
-  unsigned int buf_no = *idle_buffers.begin();
-  idle_buffers.erase(buf_no);
-  busy_buffers.insert(buf_no);
-  g_mtx.unlock();
-
-  std::vector<std::string> partial_files;
-
-  unsigned int ind_in_buf = 0;
-  while (sam_read1(fp_in, bamHdr, aln_arr[buf_no][ind_in_buf]) > 0)
-  {
-    ind_in_buf++;
-    num_alignments++;
-
-    if (ind_in_buf == options.alignments_per_thread)
-    {
-      std::cout << "Batch number : " << batch << std::endl;
-      batch++;
-
-      // thread begins with the new buf no
-      thread_id[buf_no] = std::thread(process_alignments, std::ref(options),
-                                      aln_arr[buf_no], bamHdr, buf_no, ind_in_buf,
-                                      &partial_files);
-
-      // move forward only if there is room for new buffer
-      SEM_WAIT(g_tagsort_semaphore);
-
-      // join any completed thread
-      g_mtx.lock();
-      for (unsigned int thread_ind : g_threads_to_join)
-      {
-        thread_id[thread_ind].join();
-        busy_buffers.erase(thread_ind);
-        idle_buffers.insert(thread_ind);
-      }
-      // clear the threads
-      g_threads_to_join.clear();
-      g_mtx.unlock();
-
-      // now find an idle buffer and make it busy so that we can load new data
-      g_mtx.lock();
-      // this is the new buffer to fill
-      buf_no = *idle_buffers.begin();
-      idle_buffers.erase(buf_no);
-      busy_buffers.insert(buf_no);
-      //std::cout << buf_no << " busy" << std::endl;
-      g_mtx.unlock();
-      ind_in_buf = 0;
-    }
-  }
-
-  thread_id[buf_no] = std::thread(process_alignments, std::ref(options),
-                                  aln_arr[buf_no], bamHdr, buf_no, ind_in_buf,
-                                  &partial_files);
-
-  // make sure you consume all the counts, the remaining semaphore is the value
-  int sem_value;
-  sem_getvalue(&g_tagsort_semaphore, &sem_value);
-  for (unsigned int k=0; k< options.nthreads; k++)
-    SEM_WAIT(g_tagsort_semaphore);
-  SEM_DESTROY(g_tagsort_semaphore);
-
-  // join any completed thread that are ready to be joined
-  g_mtx.lock();
-  for (unsigned int thread_ind : g_threads_to_join)
-    thread_id[thread_ind].join();
-
-  g_threads_to_join.clear();
-  g_mtx.unlock();
-
-  // release the memory and clear data-structures
-  for (unsigned int i = 0; i < options.nthreads; i++)
-  {
-    std::cout << "releasing memory for thread " << i << std::endl;
-    for (unsigned int k = 0; k < options.alignments_per_thread; k++)
-      bam_destroy1(aln_arr[i][k]);
-    free(aln_arr[i]);
-  }
-  free(aln_arr);
-
-  sam_hdr_destroy(bamHdr);
-  hts_close(fp_in);
-
-  std::cout << "Deallocate threads " << g_num_thread_deallocations << std::endl;
-  std::cout << "Read " << num_alignments << " records in batches of "
-            << options.alignments_per_thread << std::endl;
-
-  return partial_files;
+  return alignment_reader.partial_filenames();
 }  // function
 
