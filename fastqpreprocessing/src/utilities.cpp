@@ -52,7 +52,6 @@ WhiteListData readWhiteList(std::string const& white_list_file)
   return white_list_data;
 }
 
-
 /** @copydoc crashWithPerror */
 void crashWithPerror(std::string msg)
 {
@@ -65,4 +64,92 @@ void crash(std::string msg)
   std::cout << msg << std::endl;
   std::cerr << msg << std::endl;
   exit(1);
+}
+
+
+Token StringBank::getToken(std::string s)
+{
+  if (auto it = indices_.find(s) ; it != indices_.end())
+    return data_[it->second];
+  data_.push_back(s);
+  indices_[s] = data_.size() - 1;
+  return data_.size() - 1;
+}
+std::string const& StringBank::getString(Token t) const
+{
+  return data_.find(t)->second;
+}
+
+TagTripletManager::TagTripletManager(std::unordered_map<std::string, unsigned int> options_tag_order)
+{
+  assert(options.tag_order.size() == 3);
+  // the order of the three tags are define by the order of the supplied input arguments
+  // tag.order [tag_name] -> order map
+  if (options.tag_order[options.barcode_tag] == 0 &&
+      options.tag_order[options.gene_tag] == 1 &&
+      options.tag_order[options.umi_tag] == 2)
+  {
+    tag_order_ = TagOrder::BGU;
+    sb0_ = &sb_b_; sb1_ = &sb_g_; sb2_ = &sb_u_;
+  }
+  else if (options.tag_order[options.umi_tag] == 0 &&
+            options.tag_order[options.barcode_tag] == 1 &&
+            options.tag_order[options.gene_tag] == 2)
+  {
+    tag_order_ = TagOrder::UBG;
+    sb0_ = &sb_u_; sb1_ = &sb_b_; sb2_ = &sb_g_;
+  }
+  else if (options.tag_order[options.umi_tag] == 0 &&
+            options.tag_order[options.gene_tag] == 1 &&
+            options.tag_order[options.barcode_tag] == 2)
+  {
+    tag_order_ = TagOrder::UGB;
+    sb0_ = &sb_u_; sb1_ = &sb_g_; sb2_ = &sb_b_;
+  }
+  else if (options.tag_order[options.gene_tag] == 0 &&
+            options.tag_order[options.umi_tag] == 1 &&
+            options.tag_order[options.barcode_tag] == 2)
+  {
+    tag_order_ = TagOrder::GUB;
+    sb0_ = &sb_g_; sb1_ = &sb_u_; sb2_ = &sb_b_;
+  }
+  else if (options.tag_order[options.gene_tag] == 0 &&
+            options.tag_order[options.barcode_tag] == 1 &&
+            options.tag_order[options.umi_tag] == 2)
+  {
+    tag_order_ = TagOrder::GBU;
+    sb0_ = &sb_g_; sb1_ = &sb_b_; sb2_ = &sb_u_;
+  }
+  else
+  {
+    tag_order_ = TagOrder::BUG;
+    sb0_ = &sb_b_; sb1_ = &sb_u_; sb2_ = &sb_g_;
+  }
+}
+
+TRIPLET TagTripletManager::makeTriplet(std::string barcode, std::string umi, std::string gene_id)
+{
+  switch (tag_order_)
+  {
+    case TagOrder::BUG: return TRIPLET(sb_b_.getToken(barcode), sb_u_.getToken(umi), sb_g_.getToken(gene_id));
+    case TagOrder::BGU: return TRIPLET(sb_b_.getToken(barcode), sb_g_.getToken(gene_id), sb_u_.getToken(umi));
+    case TagOrder::UBG: return TRIPLET(sb_u_.getToken(umi), sb_b_.getToken(barcode), sb_g_.getToken(gene_id));
+    case TagOrder::UGB: return TRIPLET(sb_u_.getToken(umi), sb_g_.getToken(gene_id), sb_b_.getToken(barcode));
+    case TagOrder::GUB: return TRIPLET(sb_g_.getToken(gene_id), sb_u_.getToken(umi), sb_b_.getToken(barcode));
+    case TagOrder::GBU: return TRIPLET(sb_g_.getToken(gene_id), sb_b_.getToken(barcode), sb_u_.getToken(umi));
+    default: crash("no such TagOrder"); return TRIPLET(1,2,3);
+  }
+}
+
+std::string const& TagTripletManager::getString0(TRIPLET triplet)
+{
+  return sb0_->getString(std::get<0>(triplet));
+}
+std::string const& TagTripletManager::getString1(TRIPLET triplet)
+{
+  return sb1_->getString(std::get<1>(triplet));
+}
+std::string const& TagTripletManager::getString2(TRIPLET triplet)
+{
+  return sb2_->getString(std::get<2>(triplet));
 }

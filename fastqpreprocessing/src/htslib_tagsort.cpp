@@ -68,12 +68,10 @@ inline char* get_Ztag_or_default(bam1_t* aln, const char* tagname, char* default
   return  tag_value;
 }
 
-using TRIPLET = std::tuple<std::string, std::string, std::string>;
-
 using TAGTUPLE = std::tuple<
     TRIPLET /*  barcode umi and gene_id, not necessarily in that order */,
-    std::string /* reference */,
-    std::string /* biotype */,
+    std::string /* reference */, TODO also stringbank this?
+    std::string /* biotype */, TODO also stringbank this?
     int /* pos */,
     int /*rev strand   1 for yes, 0 otherwise*/,
     float /*avg barcode qual score */,
@@ -88,24 +86,9 @@ using TAGTUPLE = std::tuple<
     float /* fraction of umi qual score > 30 */
     >;
 
-enum class TagOrder { BUG, BGU, UBG, UGB, GUB, GBU };
-TRIPLET makeTriplet(std::string barcode, std::string umi, std::string gene_id, TagOrder tag_order)
-{
-  switch (tag_order)
-  {
-    case TagOrder::BUG: return TRIPLET(barcode, umi, gene_id);
-    case TagOrder::BGU: return TRIPLET(barcode, gene_id, umi);
-    case TagOrder::UBG: return TRIPLET(umi, barcode, gene_id);
-    case TagOrder::UGB: return TRIPLET(umi, gene_id, barcode);
-    case TagOrder::GUB: return TRIPLET(gene_id, umi, barcode);
-    case TagOrder::GBU: return TRIPLET(gene_id, barcode, umi);
-    default: crash("no such TagOrder"); return TRIPLET("","","");
-  }
-}
-
 void parseOneAlignment(std::vector<TAGTUPLE>* tuple_records, bam1_t* aln,
                        INPUT_OPTIONS_TAGSORT& options, const bam_hdr_t* bam_hdr,
-                       TagOrder tag_order)
+                       TagTripletManager& triplet_manager)
 {
   // "consts" that the library doesn't allow to be const.
   char empty[] = "";
@@ -200,7 +183,7 @@ void parseOneAlignment(std::vector<TAGTUPLE>* tuple_records, bam1_t* aln,
   }
 
   tuple_records->emplace_back(
-      makeTriplet(barcode, umi, gene_id, tag_order), /* triplet of tags */
+      triplet_manager.makeTriplet(barcode, umi, gene_id), /* triplet of tags */
       std::string(chr),  /* record[0] */
       std::string(location_tag), /* record[1] */
       pos,   /* record [2] */
@@ -215,17 +198,6 @@ void parseOneAlignment(std::vector<TAGTUPLE>* tuple_records, bam1_t* aln,
       is_duplicate, /* record[11] */
       perfect_cell_barcode,  /* record[12] */
       frac_umi_qual_above_threshold /* record[13] */);
-}
-
-inline bool sortTripletsLex(std::pair<TRIPLET, int> const& a,
-                            std::pair<TRIPLET, int> const& b)
-{
-  using std::get;
-  if (get<0>(a.first) != get<0>(b.first))
-    return get<0>(a.first).compare(get<0>(b.first)) < 0;
-  if (get<1>(a.first) != get<1>(b.first))
-    return get<1>(a.first).compare(get<1>(b.first)) < 0;
-  return get<2>(a.first).compare(get<2>(b.first)) < 0;
 }
 
 // Generates a random alphanumeric string (AZaz09) of a fixed length.
@@ -260,7 +232,8 @@ std::string randomString()
  * @return a string for the random file name
 */
 std::string sortAndWriteToPartialTxtFile(std::vector<TAGTUPLE> const& tuple_records,
-                                         std::string const& tmp_folder)
+                                         std::string const& tmp_folder,
+                                         TagTripletManager& m)
 {
   using std::get;
 
@@ -271,17 +244,37 @@ std::string sortAndWriteToPartialTxtFile(std::vector<TAGTUPLE> const& tuple_reco
   std::vector<std::pair<TRIPLET, int>> index_pairs;
   for (size_t i = 0; i < tuple_records.size(); i++)
     index_pairs.emplace_back(get<0>(tuple_records[i]), i);
-  std::sort(index_pairs.begin(), index_pairs.end(), sortTripletsLex);
+
+  std::sort(index_pairs.begin(), index_pairs.end(),
+  [&m](std::pair<TRIPLET, int> const& a, std::pair<TRIPLET, int> const& b)
+  {
+    std::string const& a0 = m.getString0(a.first);
+    std::string const& b0 = m.getString0(b.first);
+    int comp0 = a0.compare(b0)
+    if (comp0 != 0)
+      return comp0 < 0;
+
+    std::string const& a1 = m.getString1(a.first);
+    std::string const& b1 = m.getString1(b.first);
+    int comp1 = a1.compare(b1)
+    if (comp1 != 0)
+      return comp1 < 0;
+
+    std::string const& a2 = m.getString2(a.first);
+    std::string const& b2 = m.getString2(b.first);
+    int comp2 = a2.compare(b2)
+    return comp2 < 0;
+  });
 
   // ...then write the triplets in sorted order, linked up with the tuple_record
   // located at its pre-sorted index, i.e. the record for the triplet.
-  for (auto& [triplet_ptr, record_index] : index_pairs)
+  for (auto& [triplet, record_index] : index_pairs)
   {
     // TODO?
     // what if you ran out of disk space ???? NEED TO add logic
-    outfile << get<0>(triplet_ptr) /*  first tag */ << "\t"
-            << get<1>(triplet_ptr) /*  second tag */ << "\t"
-            << get<2>(triplet_ptr) /*  third tag */ << "\t"
+    outfile << m.getString0(triplet) /*  first tag */ << "\t"
+            << m.getString1(triplet) /*  second tag */ << "\t"
+            << m.getString2(triplet) /*  third tag */ << "\t"
             << get<1>(tuple_records[record_index]) /* record[0] */  << "\t"
             << get<2>(tuple_records[record_index]) /* record[1] */  << "\t"
             << get<3>(tuple_records[record_index]) /* record[2] */  << "\t"
@@ -310,6 +303,9 @@ class AlignmentReader
 public:
   explicit AlignmentReader(INPUT_OPTIONS_TAGSORT options) : options_(options)
   {
+    if (options_.alignments_per_batch > 4294967295)
+      crash("alignments_per_batch too large; max allowed is 4294967295");
+
     if ((sam_file_ptr_ = hts_open(options.bam_input.c_str(),"r")) == nullptr)
       crash(options.bam_input + ": cannot open file.");
 
@@ -399,6 +395,7 @@ void partialSortWorkerThread(int my_thread_index, AlignmentReader* alignment_rea
   bam_hdr_t* bam_hdr = alignment_reader->bam_hdr();
   while (true)
   {
+    TagTripletManager triplet_manager(options); TODO rebuild per chunk, or keep across chunks? (will strings be repeated?)
     std::vector<TAGTUPLE> tuple_records;
 
     auto [aln_ptr_array, alns_length] = alignment_reader->readAlignments(my_thread_index);
@@ -406,50 +403,12 @@ void partialSortWorkerThread(int my_thread_index, AlignmentReader* alignment_rea
       break;
 
     for (unsigned int i = 0; i < alns_length; i++)
-      parseOneAlignment(&tuple_records, aln_ptr_array[i], options, bam_hdr, tag_order);
+      parseOneAlignment(&tuple_records, aln_ptr_array[i], options, bam_hdr, triplet_manager);
 
     my_partial_filenames.push_back(
-        sortAndWriteToPartialTxtFile(tuple_records, options.temp_folder));
+        sortAndWriteToPartialTxtFile(tuple_records, options.temp_folder, triplet_manager));
   }
   alignment_reader->addToPartialFilenames(my_partial_filenames);
-}
-
-TagOrder getTagOrder(INPUT_OPTIONS_TAGSORT options)
-{
-  assert(options.tag_order.size() == 3);
-  // the order of the three tags are define by the order of the supplied input arguments
-  // tag.order [tag_name] -> order map
-  if (options.tag_order[options.barcode_tag] == 0 &&
-      options.tag_order[options.gene_tag] == 1 &&
-      options.tag_order[options.umi_tag] == 2)
-  {
-    return TagOrder::BGU;
-  }
-  if (options.tag_order[options.umi_tag] == 0 &&
-      options.tag_order[options.barcode_tag] == 1 &&
-      options.tag_order[options.gene_tag] == 2)
-  {
-    return TagOrder::UBG;
-  }
-  if (options.tag_order[options.umi_tag] == 0 &&
-      options.tag_order[options.gene_tag] == 1 &&
-      options.tag_order[options.barcode_tag] == 2)
-  {
-    return TagOrder::UGB;
-  }
-  if (options.tag_order[options.gene_tag] == 0 &&
-      options.tag_order[options.umi_tag] == 1 &&
-      options.tag_order[options.barcode_tag] == 2)
-  {
-    return TagOrder::GUB;
-  }
-  if (options.tag_order[options.gene_tag] == 0 &&
-      options.tag_order[options.barcode_tag] == 1 &&
-      options.tag_order[options.umi_tag] == 2)
-  {
-    return TagOrder::GBU;
-  }
-  return TagOrder::BUG;
 }
 
 /**
