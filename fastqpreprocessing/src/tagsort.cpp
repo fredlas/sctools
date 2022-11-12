@@ -188,8 +188,11 @@ int mergePartialFiles(INPUT_OPTIONS_TAGSORT const& options,
 
   maybe_metrics.writeFinalMetrics();
 
-  std::cout << "Wrote "<< num_alignments << " alignments in sorted order to "
-            << options.sorted_output_file << std::endl;
+  if (options.output_sorted_info)
+  {
+    std::cout << "Wrote "<< num_alignments << " alignments in sorted order to "
+              << options.sorted_output_file << std::endl;
+  }
   return num_alignments;
 }
 
@@ -230,15 +233,13 @@ int main(int argc, char** argv)
     a head to compare the values based on the tags used  */
   std::cout << "Merging " <<  partial_files.size() << " sorted files!"<< std::endl;
 
-  int alignments_filled = mergePartialFiles(options, partial_files);
+  int num_alignments = mergePartialFiles(options, partial_files);
+  std::cout << "Processed " << num_alignments << " alignments." << std::endl;
 
   // we no longer need the partial files
   for (unsigned int i=0; i < partial_files.size(); i++)
     if (remove(partial_files[i].c_str()) != 0)
       std::cerr << "Warning: error deleting file " << partial_files[i] << std::endl;
-
-  partial_files.clear();
-  std::cout << "Aligments " << alignments_filled << " loaded to buffer " << std::endl;
 
   warnIfNo_mitochondrial_gene_names_filename(options);
   return 0;
