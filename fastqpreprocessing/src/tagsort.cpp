@@ -72,8 +72,8 @@ public:
 
   // returns the appropriate next item, and an index into your PartialFile
   // array, from which you should giveInput() the next item into this Merger.
-  // (If that PartialFile is now out of data, you can safely pick an
-  //  arbitrary other one to take data from).
+  // (If that PartialFile is now out of data, then you don't have to call
+  //  giveInput() this time).
   std::pair<std::string, int> receiveNextOutput()
   {
     auto ret = heap_.top();
