@@ -6,291 +6,196 @@
 #include <queue>
 #include <regex>
 #include <string>
-#include <sstream>
 #include <unordered_set>
 
 #include "htslib_tagsort.h"
 #include "metricgatherer.h"
 
-constexpr int kDataBufferSize = 1000;
+constexpr int kLinesToReadInAChunk = 1000;
 
-struct Context
+// Hands you lines one at a time from a file, reading in nice big efficient
+// chunks whenever necessary.
+class PartialFile
 {
-  std::vector<std::vector<std::string>> data;
-
-  std::vector<long int> file_offset;
-  std::vector<int> data_size;
-  std::vector<int> ptrs;
-  std::vector<bool> isempty;
-  int index_ = -1;
-  int num_active_files = 0;
-  const int num_parts_;
-
-  Context(unsigned int num_parts) : num_parts_(num_parts)
+public:
+  PartialFile(std::string const& filename) : file_(filename)
   {
-    // set the file offsets to 0
-    for (int i=0; i < num_parts_; i++)
-      file_offset.push_back(0);
-
-    // set the isempty for each file to false
-    for (int i=0; i < num_parts_; i++)
-      isempty.push_back(false);
-
-    // set a vector of vectors of data for each file
-    for (int i=0; i < num_parts_; i++)
-      data.push_back(std::vector<std::string>());
-
-    // set the data_size of the buffer for each file to 0
-    for (int i=0; i < num_parts_; i++)
-      data_size.push_back(0);
-
-    // set the pointer to f each buffer to kDataBufferSize
-    for (int i=0; i < num_parts_; i++)
-      ptrs.push_back(kDataBufferSize);
+    if (!file_)
+      crash("ERROR failed to open the file " + filename);
+    fillBuffer();
   }
 
-  void print_status()
+  bool stillHasData()
   {
-    std::cout << "Contx status " << std::endl;
-    for (int i=0; i < num_parts_; i++)
+    if (sorted_.empty())
+      fillBuffer();
+    return !sorted_.empty();
+  }
+
+  // It is expected that you call stillHasData() immediately before every call
+  // of takeNext(), to keep PartialFile's internal buffer populated.
+  std::string takeNext()
+  {
+    std::string ret = sorted_.front();
+    sorted_.pop();
+    return ret;
+  }
+
+private:
+  void fillBuffer()
+  {
+    int alignments_filled = 0;
+    std::string line;
+    while (std::getline(file_, line))
     {
-      index_ = i;
-      std::cout << "\t" << index_ << "\t" << data[index_].size() << "\t"
-                << data_size[index_] << "\t" << ptrs[index_] << std::endl;
+      sorted_.push(line);
+      if (++alignments_filled >= kLinesToReadInAChunk)
+        break;
     }
   }
 
-  void clear()
-  {
-    data_size.clear();
-    ptrs.clear();
-    isempty.clear();
-  }
+  std::ifstream file_;
+  std::queue<std::string> sorted_;
 };
 
-using QUEUETUPLE = std::tuple<std::string, int, int>;
-
-
-/*
- * @brief fills the buffer for the files
- *
- * @param contx is the context of the file
- * @return int number of alignments processed
-*/
-int fill_buffer(Context& contx, std::vector<std::string> const& partial_files)
+// Helper class for merging several sorted lists into one, using
+// std::priority_queue to keep track of which item to merge next.
+class Merger
 {
-  contx.data[contx.index_].clear();
-  int k = 0;
-  int filling_counter = 0;
-
-  std::ifstream input_file(partial_files[contx.index_]);
-  if (!input_file)
-    crash("ERROR failed to open the file " + partial_files[contx.index_]);
-
-  input_file.seekg(contx.file_offset[contx.index_]);
-
-  // the order of the loop condition is iportant first make sure if you can accomodate then try to read,
-  // otherwise it might create a read but never processed
-  for (std::string line; k < kDataBufferSize && std::getline(input_file, line); k++)
+public:
+  Merger()
   {
-    contx.data[contx.index_].push_back(line);
-    filling_counter++;
-  }
-  assert(contx.data[contx.index_].size() <= kDataBufferSize);
-
-  contx.file_offset[contx.index_] = input_file.tellg();
-
-  contx.data_size[contx.index_] = contx.data[contx.index_].size();
-
-  if (contx.data_size[contx.index_] != 0)
-  {
-    contx.ptrs[contx.index_] = 0;
-    contx.isempty[contx.index_] = false;
-  }
-  else
-  {
-    contx.ptrs[contx.index_] = kDataBufferSize;
-    contx.isempty[contx.index_] = true;
+    heap_ = std::priority_queue<std::pair<std::string, int>,
+                      std::vector<std::pair<std::string, int>>,
+                      decltype(greater_than_) >(greater_than_);
   }
 
-#ifdef DEBUG
-  std::cout << "-->" << std::endl;
-  for (int m = 0; m < contx.num_parts_; m++)
-    std::cout << "\t" << m << " : " << contx.data_size[m] << " : " << contx.ptrs[m] << std::endl;
-#endif
+  // returns the appropriate next item, and an index into your PartialFile
+  // array, from which you should giveInput() the next item into this Merger.
+  // (If that PartialFile is now out of data, you can safely pick an
+  //  arbitrary other one to take data from).
+  std::pair<std::string, int> receiveNextOutput()
+  {
+    auto ret = heap_.top();
+    heap_.pop();
+    return ret;
+  }
 
-  return filling_counter;
-}
+  void giveInput(std::string input, int src_file_ind)
+  {
+    heap_.emplace(input, src_file_ind);
+  }
 
-// TODO if after other refactoring this ends up being the only regex use, then
-//      probably would be worth switching away from regex here.
-// From e.g. "A\tB\tC\tD\tE", extract "A\tB\tC"
-std::string extractCompTag(std::string& s)
+  bool empty() const { return heap_.empty(); }
+
+private:
+  std::function<bool(std::pair<std::string, int> const&,
+                     std::pair<std::string, int> const&)>
+      greater_than_ =
+          [](std::pair<std::string, int> const& a,
+             std::pair<std::string, int> const& b)
+          {
+            return a.first > b.first;
+          };
+
+  std::priority_queue<std::pair<std::string, int>,
+                      std::vector<std::pair<std::string, int>>,
+                      decltype(greater_than_) > heap_;
+};
+
+// Optional wrapper around MetricGatherer.
+class MaybeMetrics
 {
-  const std::regex rgx("\t");
-  const std::sregex_token_iterator end;
-  std::sregex_token_iterator iter(s.begin(), s.end(), rgx, -1);
-  std::stringstream comp_tag;
-  for (auto k = 0; k < 3 && iter != end; ++iter, k++)
+public:
+  MaybeMetrics(INPUT_OPTIONS_TAGSORT const& options)
+    : do_we_care_(options.compute_metric)
   {
-    if (k > 0)
-      comp_tag << "\t";
-    comp_tag << *iter;
+    if (!do_we_care_)
+      return;
+
+    if (options.metric_type == MetricType::Cell)
+    {
+      mg_ = std::make_unique<CellMetricGatherer>(
+          options.gtf_file, options.mitochondrial_gene_names_filename);
+    }
+    else if (options.metric_type == MetricType::Gene)
+      mg_ = std::make_unique<GeneMetricGatherer>();
+    else if (options.metric_type == MetricType::Umi)
+      mg_ = std::make_unique<UmiMetricGatherer>();
+    else
+      crash("new MetricType enum value is not yet handled by MetricGatherer!");
+
+    file_.open(options.metric_output_file);
+    file_ << mg_->getHeader() << "\n";
   }
-  return comp_tag.str();
-}
+
+  void ingestLine(std::string line)
+  {
+    if (do_we_care_)
+      mg_->ingestLine(line, file_);
+  }
+
+  void writeFinalMetrics()
+  {
+    if (do_we_care_)
+    {
+      mg_->output_metrics(file_);
+      mg_->output_metrics_extra(file_);
+    }
+  }
+
+private:
+  const bool do_we_care_;
+  std::unique_ptr<MetricGatherer> mg_{};
+  std::ofstream file_;
+};
+
 
 // returns number of alignments processed
-int mergeSortedPartialFiles(INPUT_OPTIONS_TAGSORT const& options,
+int mergePartialFiles(INPUT_OPTIONS_TAGSORT const& options,
                             std::vector<std::string> const& partial_files)
 {
-  int filling_counter = 0;
+  int num_alignments = 0;
 
-  // input the buffer size and partial files
-  Context contx(partial_files.size());
-  auto cmp = [](const QUEUETUPLE &a, const  QUEUETUPLE &b)
-  {
-    return std::get<0>(a) > std::get<0>(b);
-  };
-  std::priority_queue<QUEUETUPLE, std::vector<QUEUETUPLE>,  decltype(cmp) > heap(cmp);
-
-  for (int i=0; i < contx.num_parts_; i++)
-  {
-    contx.index_ = i;
-    filling_counter += fill_buffer(contx, partial_files);
-  }
-
-  // create the heap from the first batch loaded data
-  contx.num_active_files = 0;
-  for (int i=0; i< contx.num_parts_; i++)
-  {
-    contx.index_ = i;
-    if (contx.ptrs[i] != kDataBufferSize)
-    {
-      heap.push(QUEUETUPLE(extractCompTag(contx.data[i][contx.ptrs[i]]), i, contx.ptrs[i]));
-      contx.ptrs[i]++;
-      contx.num_active_files += 1;
-    }
-  }
-
-  //  now merge by pop an push
+  MaybeMetrics maybe_metrics(options);
   std::ofstream fout;
-  if (options.compute_metric) // TODO i think this is a mistake, and should actually be options.output_sorted_info
+  if (options.output_sorted_info)
     fout.open(options.sorted_output_file);
 
-  // pop and push from the heap
-  int num_alignments = 0;
-  int i, j;
+  // We are going to merge the contents of each of these into a single sorted file.
+  std::vector<PartialFile> sorted_partial_files;
+  for (std::string const& fname : partial_files)
+    sorted_partial_files.emplace_back(fname);
 
-  std::unique_ptr<MetricGatherer> metric_gatherer;
-  if (options.metric_type == MetricType::Cell)
+  // We use a heap to track which item to put into the final sorted file next:
+  // we start it with one item from each input file.
+  Merger merger;
+  for (int i = 0; i < sorted_partial_files.size(); i++)
+    if (sorted_partial_files[i].stillHasData())
+      merger.giveInput(sorted_partial_files[i].takeNext(), i);
+
+  while (!merger.empty())
   {
-    metric_gatherer = std::make_unique<CellMetricGatherer>(
-        options.gtf_file, options.mitochondrial_gene_names_filename);
-  }
-  else if (options.metric_type == MetricType::Gene)
-    metric_gatherer = std::make_unique<GeneMetricGatherer>();
-  else if (options.metric_type == MetricType::Umi)
-    metric_gatherer = std::make_unique<UmiMetricGatherer>();
-  else
-    crash("new MetricType enum value is not yet handled by MetricGatherer!");
-  metric_gatherer->clear();
+    // 'line' is the next item to go to the sorted file.
+    auto [line, i] = merger.receiveNextOutput();
 
-  std::ofstream fmetric_out;
-  if (options.compute_metric)
-  {
-    fmetric_out.open(options.metric_output_file.c_str());
-    fmetric_out << metric_gatherer->getHeader() << std::endl;
-  }
-
-  // TODO just write directly to fout... don't think the 'binary' is significant,
-  //      but not 100% sure
-  std::stringstream str(std::stringstream::out | std::stringstream::binary);
-  std::string prev_comp_tag = "";
-  while (!heap.empty())
-  {
-    // read the top
-    QUEUETUPLE qtuple = heap.top();
-    std::string curr_comp_tag = std::get<0>(qtuple);
-    i = std::get<1>(qtuple);  //buffer no
-    j = std::get<2>(qtuple);  //the pointer into the ith buffer array
-
-#ifdef DEBUG
-    assert(prev_comp_tag.compare(curr_comp_tag) <= 0);
-    contx.print_status();
-    if (prev_comp_tag.compare(curr_comp_tag) <= 0)
-      std::cout << "Expected " << prev_comp_tag << "\n\t\t" << curr_comp_tag << std::endl;
-    else
-      crash("Anomaly " + prev_comp_tag + "\n\t\t" + curr_comp_tag);
-#endif
-
-    heap.pop();
-
-    // start writing in chunks from the stream buffer
-    if (num_alignments%kDataBufferSize==0)
-    {
-      if (options.output_sorted_info)
-      {
-        fout.write(str.str().c_str(), str.str().length());
-        str.clear();
-        str.str("");
-      }
-    }
-
-    // load into stream buffer
-    std::string field = contx.data[i][j];
     if (options.output_sorted_info)
-      str << field << std::endl;
+      fout << line << "\n";
+    maybe_metrics.ingestLine(line);
+    num_alignments++;
 
-    if (options.compute_metric)
-      metric_gatherer->ingestLine(field, fmetric_out);
-    num_alignments += 1;
-
-    // if ismpty is true means the file has been fully read
-    if (!contx.isempty[i] && contx.ptrs[i] == contx.data_size[i])
-    {
-      contx.index_ = i;
-      filling_counter += fill_buffer(contx, partial_files);
-    }
-
-    // make sure it is not empty
-    if (contx.data_size[i] > 0)
-    {
-      heap.push(QUEUETUPLE(extractCompTag(contx.data[i][contx.ptrs[i]]), i, contx.ptrs[i]));
-      contx.ptrs[i]++;
-    }
-    else     // one more file is fully read
-      contx.num_active_files -= 1;
-
-    if (num_alignments % 1000000 == 0)
-      std::cout << "num alns read " << num_alignments << std::endl;
-
-    prev_comp_tag = curr_comp_tag;
+    // Now that 'line' has been removed from the heap, it needs to be replaced
+    // with another item from the same file (i) that it came from.
+    // (If file i is out of data, then we don't need to replace).
+    if (sorted_partial_files[i].stillHasData())
+      merger.giveInput(sorted_partial_files[i].takeNext(), i);
   }
 
-  // process the final line
-  metric_gatherer->output_metrics(fmetric_out);
-  metric_gatherer->output_metrics_extra(fmetric_out);
+  maybe_metrics.writeFinalMetrics();
 
-  // close the metric file
-  if (options.compute_metric)
-    fmetric_out.close();
-
-  // write out the remaining data
-  if (options.output_sorted_info)
-  {
-    fout.write(str.str().c_str(), str.str().length());
-    str.str("");
-    str.clear();
-  }
-
-  // close output files as there is no more to write
-  if (options.output_sorted_info)
-    fout.close();
-
-  std::cout << "Written "<< num_alignments << " alignments in total" << std::endl;
-  contx.clear();
-  return filling_counter;
+  std::cout << "Wrote "<< num_alignments << " alignments in sorted order to "
+            << options.sorted_output_file << std::endl;
+  return num_alignments;
 }
 
 void warnIfNo_mitochondrial_gene_names_filename(INPUT_OPTIONS_TAGSORT const& options)
@@ -330,7 +235,7 @@ int main(int argc, char** argv)
     a head to compare the values based on the tags used  */
   std::cout << "Merging " <<  partial_files.size() << " sorted files!"<< std::endl;
 
-  int filling_counter = mergeSortedPartialFiles(options, partial_files);
+  int alignments_filled = mergePartialFiles(options, partial_files);
 
   // we no longer need the partial files
   for (unsigned int i=0; i < partial_files.size(); i++)
@@ -338,7 +243,7 @@ int main(int argc, char** argv)
       std::cerr << "Warning: error deleting file " << partial_files[i] << std::endl;
 
   partial_files.clear();
-  std::cout << "Aligments " << filling_counter << " loaded to buffer " << std::endl;
+  std::cout << "Aligments " << alignments_filled << " loaded to buffer " << std::endl;
 
   warnIfNo_mitochondrial_gene_names_filename(options);
   return 0;
