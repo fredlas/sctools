@@ -63,12 +63,7 @@ private:
 class Merger
 {
 public:
-  Merger()
-  {
-    heap_ = std::priority_queue<std::pair<std::string, int>,
-                      std::vector<std::pair<std::string, int>>,
-                      decltype(greater_than_) >(greater_than_);
-  }
+  Merger() : heap_(greater_than_) {}
 
   // returns the appropriate next item, and an index into your PartialFile
   // array, from which you should giveInput() the next item into this Merger.
